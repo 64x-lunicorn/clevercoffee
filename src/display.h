@@ -2,9 +2,10 @@
  * @file display.h
  *
  * @brief
+ *
+ * Modified 2026 for the Silvia-only fork (github.com/64x-lunicorn/clevercoffee).
  */
 
-#if (OLED_DISPLAY != 0)
 
 /**
  * @brief initialize display
@@ -47,41 +48,7 @@ void displayLogo(String displaymessagetext, String displaymessagetext2) {
     u8g2.drawStr(0, 55, displaymessagetext2.c_str());
 
     // Rancilio startup logo
-    switch (machine) {
-        case RancilioSilvia:  // Rancilio
-            u8g2.drawXBMP(41, 2, startLogoRancilio_width, startLogoRancilio_height,
-                            startLogoRancilio_bits);
-            break;
-
-        case RancilioSilviaE:  // Rancilio
-            u8g2.drawXBMP(41, 2, startLogoRancilio_width, startLogoRancilio_height,
-                            startLogoRancilio_bits);
-            break;
-
-        case Gaggia:  // Gaggia
-            u8g2.drawXBMP(0, 2, startLogoGaggia_width, startLogoGaggia_height,
-                            startLogoGaggia_bits);
-            break;
-
-        case QuickMill:  // Quickmill
-            u8g2.drawXBMP(22, 0, startLogoQuickMill_width, startLogoQuickMill_height,
-                            startLogoQuickMill_bits);
-            break;
-    }
-    u8g2.sendBuffer();
-}
-
-/**
- * @brief calibration mode
- *
- * @param display_distance
- */
-void displayDistance(int display_distance) {
-    u8g2.clearBuffer();
-    u8g2.setCursor(13, 12);
-    u8g2.setFont(u8g2_font_fub20_tf);
-    u8g2.printf("%d", display_distance);
-    u8g2.print("mm");
+    u8g2.drawXBMP(41, 2, startLogoRancilio_width, startLogoRancilio_height, startLogoRancilio_bits);
     u8g2.sendBuffer();
 }
 
@@ -114,40 +81,6 @@ void displayShottimer(void) {
         u8g2.setFont(u8g2_font_profont11_tf);
         u8g2.sendBuffer();
     }
-
-    #if (ONLYPIDSCALE == 1 || BREWMODE == 2)
-        // Shotimer muss 2 sein und Bezug vorliegen
-        if ((machineState == kBrew) && SHOTTIMER == 2) {
-            // Dann Zeit anzeigen
-            u8g2.clearBuffer();
-
-            // temp icon
-            u8g2.drawXBMP(0, 0, brewlogo_width, brewlogo_height, brewlogo_bits_u8g2);
-            u8g2.setFont(u8g2_font_profont22_tf);
-            u8g2.setCursor(64, 15);
-            u8g2.print(timeBrewed / 1000, 1);
-            u8g2.print("s");
-            u8g2.setCursor(64, 38);
-            u8g2.print(weightBrew, 0);
-            u8g2.print("g");
-            u8g2.setFont(u8g2_font_profont11_tf);
-            u8g2.sendBuffer();
-        }
-
-        if (((machineState == kShotTimerAfterBrew) && SHOTTIMER == 2)) {
-            u8g2.clearBuffer();
-            u8g2.drawXBMP(0, 0, brewlogo_width, brewlogo_height, brewlogo_bits_u8g2);
-            u8g2.setFont(u8g2_font_profont22_tf);
-            u8g2.setCursor(64, 15);
-            u8g2.print(lastbrewTime/1000, 1);
-            u8g2.print("g");
-            u8g2.setCursor(64, 38);
-            u8g2.print(weightBrew, 0);
-            u8g2.print(" g");
-            u8g2.setFont(u8g2_font_profont11_tf);
-            u8g2.sendBuffer();
-        }
-    #endif
 }
 
 /**
@@ -197,13 +130,6 @@ void Displaymachinestate() {
             u8g2.setFont(u8g2_font_profont22_tf);
         }
 
-        // Gaggia Logo
-        if (HEATINGLOGO == 2) {
-            u8g2.drawXBMP(0, 14, Gaggia_Classic_Logo_width, Gaggia_Classic_Logo_height, Gaggia_Classic_Logo);
-            u8g2.drawXBMP(53, 14, Heiz_Logo_width, Heiz_Logo_height, Heiz_Logo);
-            u8g2.setFont(u8g2_font_profont22_tf);
-        }
-
         // Temperature
         u8g2.setCursor(92, 30);
         u8g2.setFont(u8g2_font_profont17_tf);
@@ -230,24 +156,6 @@ void Displaymachinestate() {
         u8g2.print(temperature, 0);
         u8g2.setCursor(64, 25);
         u8g2.sendBuffer();
-    }
-
-    // Backflush
-    if (machineState == kBackflush) {
-        u8g2.setFont(u8g2_font_profont11_tf);
-        if (backflushState == 43) {
-            #if OLED_DISPLAY != 0
-                displayMessage(langstring_bckffinished[0], langstring_bckffinished[1], "", "", "", "");
-            #endif
-        } else if (backflushState == 10) {
-            #if OLED_DISPLAY != 0
-                displayMessage(langstring_bckfactivated[0], langstring_bckfactivated[1], "", "", "", "");
-            #endif
-        } else if (backflushState > 10) {
-            #if OLED_DISPLAY != 0
-                displayMessage(langstring_bckfrunning[0], String(flushCycles), langstring_bckfrunning[1], String(maxflushCycles), "", "");
-            #endif
-        }
     }
 
     // PID Off Logo
@@ -296,4 +204,4 @@ void Displaymachinestate() {
         displayMessage("EEPROM Error, please set Values", "", "", "", "", "");
     }
 }
-#endif
+

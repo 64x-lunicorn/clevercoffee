@@ -1,11 +1,13 @@
-/*
- * Standard pin mappings based on MCU type 
+/**
+ * @file hardware.h
+ *
+ * @brief Pin mapping of the NodeMCU (ESP8266) on the Clever Coffee PCB rev 1.2
+ *
+ * Modified 2026 for the Silvia-only fork: only the pins the Silvia E uses.
  */
+#pragma once
 
-#if defined(ESP32)
-    #include "esp32devkitcv4.h"
-#elif defined(ESP8266)
-    #include "esp8266nodemcuv2.h"
-#else
-    #error("MCU not supported");
-#endif
+#define PINTEMPSENSOR 2            // TSIC306 signal
+#define PINHEATER 14               // SSR for the boiler heater
+#define OLED_SCL 5                 // display clock
+#define OLED_SDA 4                 // display data

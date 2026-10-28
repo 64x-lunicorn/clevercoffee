@@ -2,18 +2,14 @@
  * @file RancilioServer.h
  *
  * @brief Embedded webserver
+ *
+ * Modified 2026 for the Silvia-only fork (github.com/64x-lunicorn/clevercoffee).
  */
 
 #include <Arduino.h>
 
-#ifdef ESP32
-    #include <WiFi.h>
-    #include <AsyncTCP.h>
-    #include "FS.h"
-#elif defined(ESP8266)
-    #include <ESP8266WiFi.h>
-    #include <ESPAsyncTCP.h>
-#endif
+#include <ESP8266WiFi.h>
+#include <ESPAsyncTCP.h>
 
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
@@ -54,11 +50,7 @@ double curTemp = 0.0;
 double tTemp = 0.0;
 double hPower = 0.0;
 
-#if defined(ESP8266)
-    #define HISTORY_LENGTH 120    //10 mins of values
-#elif defined(ESP32)
-    #define HISTORY_LENGTH 720    //60 mins of values
-#endif
+#define HISTORY_LENGTH 120    //10 mins of values
 
 static float tempHistory[3][HISTORY_LENGTH] = {0};
 int historyCurrentIndex = 0;
@@ -68,7 +60,7 @@ void serverSetup();
 void setEepromWriteFcn(int (*fcnPtr)(void));
 
 // We define these in rancilio-pid.cpp
-#define EDITABLE_VARS_LEN 26
+#define EDITABLE_VARS_LEN 21
 extern std::vector<editable_t> editableVars;
 
 // EEPROM
@@ -312,15 +304,6 @@ void serverSetup() {
 
         setPidStatus(status);
         debugPrintf("Toggle PID state: %d\n", status);
-
-        request->redirect("/");
-    });
-
-    server.on("/toggleBackflush", HTTP_POST, [](AsyncWebServerRequest *request) {
-        int backflush = flipUintValue(backflushON);
-
-        setBackflush(backflush);
-        debugPrintf("Toggle backflush mode: %i \n", backflush);
 
         request->redirect("/");
     });

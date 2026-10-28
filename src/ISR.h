@@ -2,6 +2,8 @@
  * @file ISR.h
  *
  * @brief Timer - ISR for PID calculation and heat realay output
+ *
+ * Modified 2026 for the Silvia-only fork (github.com/64x-lunicorn/clevercoffee).
  */
 
 #ifndef _ISR_H_
@@ -29,10 +31,6 @@ class HeaterIsrPause {
   private:
     bool previous;
 };
-
-#if defined(ESP32)
-extern hw_timer_t *timer;
-#endif
 
 void initTimer1(void);
 void enableTimer1(void);

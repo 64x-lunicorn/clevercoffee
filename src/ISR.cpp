@@ -1,3 +1,4 @@
+// Modified 2026 for the Silvia-only fork (github.com/64x-lunicorn/clevercoffee).
 #include <Arduino.h>
 #include "ISR.h"
 #include "hardware.h"
@@ -26,23 +27,6 @@ void IRAM_ATTR onTimer1ISR() {
         isrCounter = 0;
     }
 }
-#elif defined(ESP32)
-void IRAM_ATTR onTimer(){
-    timerAlarmWrite(timer, 10000, true);
-
-    if (pidOutput <= isrCounter) {
-        digitalWrite(PINHEATER, LOW);
-    } else {
-        digitalWrite(PINHEATER, HIGH);
-    }
-
-    isrCounter += 10; // += 10 because one tick = 10ms
-
-    //set PID output as relais commands
-    if (isrCounter >= windowSize) {
-        isrCounter = 0;
-    }
-}
 #endif
 
 
@@ -59,32 +43,18 @@ void initTimer1(void) {
         timer1_isr_init();
         timer1_attachInterrupt(onTimer1ISR);
         timer1_write(6250); // DIV256: set interrupt time to 20ms
-    #elif defined(ESP32)
-        timer = timerBegin(0, 80, true); //m
-        timerAttachInterrupt(timer, &onTimer, true);//m
-        timerAlarmWrite(timer, 10000, true);//m
-    #else
-        #error("MCU not supported");
     #endif
 }
 
 void enableTimer1(void) {
     #if defined(ESP8266)
         timer1_enable(TIM_DIV256, TIM_EDGE, TIM_SINGLE);
-    #elif defined(ESP32)
-        timerAlarmEnable(timer);
-    #else
-        #error("MCU not supported");
     #endif
 }
 
 void disableTimer1(void) {
     #if defined(ESP8266)
         timer1_disable();
-    #elif defined(ESP32)
-        timerAlarmDisable(timer);
-    #else
-        #error("MCU not supported");
     #endif
 }
 
@@ -93,10 +63,6 @@ bool isTimer1Enabled(void) {
 
     #if defined(ESP8266)
         timerEnabled = ((T1C & (1 << TCTE)) != 0);
-    #elif defined(ESP32)
-        timerEnabled = timerAlarmEnabled(timer);
-    #else
-        #error("MCU not supported");
     #endif
 
     return timerEnabled;

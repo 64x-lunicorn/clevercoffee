@@ -1,92 +1,77 @@
-# Silvia: Clever Coffee 3.3.0 mit Software-Brüherkennung
+# Building and flashing the Silvia
 
-Die Silvia lief mit `v3.3.0-esp8266`, gebaut aus der unveränderten
-`userConfig_sample.h` – darin steht `BREWDETECTION 0`. Dadurch sind alle Brew-PID-Felder
-(`PID_BD_*`) wirkungslos, die Weboberfläche speichert sie nur.
-
-Dieser Branch (`silvia-bd`) ändert nur die Konfiguration, nicht den Firmware-Code:
-
-| Einstellung | Vorlage | Silvia | Warum |
-|---|---|---|---|
-| `BREWDETECTION` | 0 | **1** | Software-Brüherkennung über den Temperaturabfall |
-| `BREWPID_DELAY` | 10 | **0** | Laut Kommentar „kein Heizen“ während der Wartezeit – tatsächlich friert 3.3.0 nur den PID-Ausgang ein (`SetMode(MANUAL)`), die Heizung bleibt auf dem letzten Wert |
-| `OTAPASS` | `otapass` | neu | Standardpasswort = jeder im WLAN kann die Heizungssteuerung flashen |
-| WLAN | Platzhalter | per Skript | Passwörter kommen nie ins Repo |
-
-## Flashen
+`flash-silvia.sh` builds the firmware in Docker and uploads it over the air (OTA). It is safe
+to re-run: it checks the repository, Docker and the machine before it asks for anything, and
+nothing is flashed until you type `flash`.
 
 ```bash
-tools/flash/flash-silvia.sh
+tools/flash/flash-silvia.sh            # build + flash
+tools/flash/flash-silvia.sh --build    # build only, placeholder secrets, no machine needed
 ```
 
-Das Skript prüft erst Repo, Docker und Maschine, sichert die Parameter nach
-`tools/flash/backups/`, fragt dann WLAN- und OTA-Passwort ab (Cmd+V), baut in Docker und
-flasht erst nach Eingabe von `flash`. Danach prüft es, ob die Brew-PID-Felder sichtbar sind
-und alle Einstellungen erhalten blieben, und zeigt ein Protokoll.
+## Local settings
 
-Nur bauen, ohne Passwörter und ohne Maschine: `tools/flash/flash-silvia.sh --build`
+The machine address and the WiFi name are not secret, but they don't belong in a public
+repository. Put them into the untracked `tools/flash/local.env` (or the environment):
 
-Gebaut wird in Docker (`python:3.12-slim`, PlatformIO 6.1.18), weil die Toolchain von
-espressif8266 2.6.x nur als Intel-Binary existiert und dieser Mac kein Rosetta hat.
-Hochgeladen wird mit `espota.py` direkt vom Mac (aus dem Container heraus kann der ESP8266
-nicht zurückverbinden).
+```bash
+SILVIA_HOST=192.0.2.10   # IP or hostname of the machine, default silvia.local
+SILVIA_SSID=my-wifi      # offered as default at the WiFi prompt
+```
 
-## Nach dem Flashen: erster Test-Shot
+## What the script does
 
-Über die Weboberfläche (Parameters → Brew Detection) für den ersten Shot:
+1. **Check**: template present, tag `v3.3.0-esp8266` present, Docker running, machine
+   reachable and running the expected firmware. All machine parameters are backed up to
+   `tools/flash/backups/` (untracked).
+2. **Credentials**: WiFi password, current and new OTA password are pasted (hidden input).
+   Keep them in 1Password; they only live in the shell process and, during the build, in
+   `src/userConfig.h` (mode 600, untracked).
+3. **Build** in `python:3.12-slim` with PlatformIO 6.1.18. The xtensa toolchain of
+   espressif8266 2.6.x only exists as an x86 binary, and the Mac has no Rosetta. Afterwards
+   `src/userConfig.h` is rewritten with placeholders.
+4. **Flash** with `espota.py` directly from the Mac (the ESP8266 cannot connect back into
+   the container). macOS may ask whether python may accept incoming connections → Allow.
+   The ESP8266 only switches to the new firmware once the upload is complete; if the upload
+   breaks off, the old firmware keeps running.
+5. **Verify** after the reboot: the machine is back, PID is on and the settings are
+   unchanged. A protocol is printed at the end.
 
-- Enable Brew PID: 1, BD Kp 120, BD Tn 0, BD Tv 20 – sind schon gesetzt
-- **PID BD Time: 30 s** statt 40 s. Die Erkennung löst ~4 s nach Shot-Beginn aus, bei
-  ~35 s Shots endet der Brew-PID damit ungefähr mit dem Shot. Länger heizen = mehr
-  Überschwingen danach.
-- PID BD Sensitivity: 120 lassen
+## Config
 
-Dann einen Shot mitloggen und mit `data/shot1.jsonl` / `data/shot2.jsonl` vergleichen.
+`userConfig.silvia.h` is the build configuration. The `@...@` placeholders are filled in by
+the script. Notable settings compared to the upstream sample config:
+
+| Setting | Upstream sample | Silvia | Why |
+|---|---|---|---|
+| `BREWDETECTION` | 0 | **1** | software brew detection from the temperature drop (the machine has no brew switch) |
+| `BREWPID_DELAY` | 10 | **0** | 3.3.0 freezes the PID output during the delay instead of stopping the heater |
+| `OTAPASS` | `otapass` | prompted | the default lets anyone on the WiFi flash the heater controller |
+
+## Recovery over USB
+
+If the machine doesn't come back into the WiFi after flashing (e.g. a mistyped WiFi
+password), it keeps heating with its stored settings. Reflash over USB on the NodeMCU:
+
+1. Fill `src/userConfig.h` from `userConfig.silvia.h` with the correct WiFi and OTA values
+   (the script removes them after every build, so do this by hand).
+2. Build the USB image:
+
+   ```bash
+   docker run --rm -v "$PWD":/fw -v silvia-pio:/root/.platformio -w /fw python:3.12-slim sh -c "apt-get update -qq && apt-get install -y -qq git && pip install -q platformio==6.1.18 && pio run -e nodemcuv2_usb"
+   ```
+
+3. Flash it:
+
+   ```bash
+   pip install esptool && esptool.py --port /dev/cu.usbserial-* write_flash 0x0 .pio/build/nodemcuv2_usb/firmware.bin
+   ```
+
+4. Put the placeholders back: `tools/flash/flash-silvia.sh --build`.
 
 ## Tests
 
-```bash
-~/.platformio/penv/bin/pio test -e native
-```
-
-Native Unity-Tests (laufen auf dem Mac, ohne Maschine):
-
-- `test/test_pid` – Verhalten der PID-Library mit den Firmware-Einstellungen
-  (Anti-Windup, I-Max, Tn = 0 setzt den Integrator zurück, MANUAL friert den Ausgang ein)
-- `test/test_brew_detection` – `TempRateFilter` + `isSoftwareBrewStart` auf Rampen und auf
-  den echten Aufzeichnungen (`test/test_brew_detection/recorded_shots.h`, erzeugt mit
-  `tools/silvia-sim/gen_test_vectors.py`)
-- `test/test_web_safety` – Prüfung der POST-Werte (`ParameterInput.h`) und `HeaterIsrPause`
-
-Sicherheitsfixes gegenüber 3.3.0 in diesem Branch:
-
-- POST `/parameters` schreibt `TEMP`/`VERSION` nicht mehr zurück (die Weboberfläche schickt
-  beim Speichern die beim Laden angezeigte Temperatur mit, die landete im Regler)
-- POST `/parameters` prüft min/max und lehnt Unsinn ab statt ihn als 0 zu übernehmen (HTTP 400)
-- `skipHeaterISR` wird über `HeaterIsrPause` auf jedem Rückweg zurückgesetzt – vorher blieb es
-  nach jeder ausgelieferten HTML-Seite `true` und der Heizungsausgang hing fest
-- BD Tn: Speicherlimit 999 statt versehentlich 200 (`PID_KP_BD_MAX`)
-
-`tools/silvia-sim/test_brew_detection.py` spielt die Erkennungslogik der Firmware
-(`calculateTemperatureMovingAverage()` + `brewDetection()`) über die echten Aufzeichnungen:
-bei Empfindlichkeit 120 alle 3 Shots nach 3,7–4,4 s erkannt, keine Fehlauslösung in ~30 min
-Leerlauf und bei einer 4-minütigen Heißwasser-Entnahme.
-
-`tools/silvia-sim/silvia_sim.py` (Thermomodell + PID-Nachbau) ist ein Versuch – das Modell
-trifft die Messungen nur auf ~1 °C genau und taugt noch nicht, um PID-Werte daraus abzuleiten.
-
-## Notfall: Maschine kommt nach dem Flashen nicht ins WLAN
-
-Die Silvia heizt auch ohne WLAN weiter mit den gespeicherten Werten. Neu flashen geht dann
-nur per USB am NodeMCU:
-
-```bash
-docker run --rm -v "$PWD":/fw -v silvia-pio:/root/.platformio -w /fw python:3.12-slim sh -c "apt-get update -qq && apt-get install -y -qq git && pip install -q platformio==6.1.18 && pio run -e nodemcuv2_usb"
-```
-
-```bash
-pip install esptool && esptool.py --port /dev/cu.usbserial-* write_flash 0x0 .pio/build/nodemcuv2_usb/firmware.bin
-```
-
-(vorher `src/userConfig.h` mit den richtigen WLAN-Daten füllen – das Skript entfernt sie
-nach jedem Build wieder.)
+See the top-level README. The recorded shots used by the tests are in
+`tools/silvia-sim/data/` (time, temperature, heater power at 1 Hz).
+`tools/silvia-sim/silvia_sim.py` is an experimental thermal model; it only matches the
+measurements to about 1 °C and is not used to derive parameters.

@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Builds Clever Coffee 3.3.0 (ESP8266) with software brew detection and flashes it
-# to the Silvia over OTA. Safe to re-run: it checks everything before it asks anything,
+# Builds the Silvia-only Clever Coffee fork (ESP8266) and flashes it to the Silvia over OTA. Safe to re-run: it checks everything before it asks anything,
 # and nothing is flashed until you type "flash".
 #
 #   tools/flash/flash-silvia.sh            # build + flash
@@ -15,7 +14,8 @@ REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 [[ -f "$REPO/tools/flash/local.env" ]] && source "$REPO/tools/flash/local.env"
 DEVICE_IP="${SILVIA_HOST:-silvia.local}"
 DEFAULT_SSID="${SILVIA_SSID:-}"
-EXPECTED_VERSION="3.3.0 ESP8222-MASTER"
+# firmware version that will be built, e.g. "3.3.0 SILVIA-1"
+NEW_VERSION="3.3.0 $(sed -nE 's/^#define FW_BRANCH +"([^"]+)".*/\1/p' "$REPO/src/rancilio-pid.cpp")"
 TEMPLATE="$REPO/tools/flash/userConfig.silvia.h"
 CONFIG="$REPO/src/userConfig.h"
 BIN="$REPO/.pio/build/nodemcuv2_ota/firmware.bin"
@@ -86,11 +86,8 @@ fi
 PARAMS_BEFORE="$(device_params)" || true
 [[ -n "$PARAMS_BEFORE" ]] || die "Silvia unter http://$DEVICE_IP nicht erreichbar – Maschine an? Gleiches WLAN?"
 VERSION="$(param "$PARAMS_BEFORE" VERSION)"
-[[ "$VERSION" == "$EXPECTED_VERSION" ]] || die "Unerwartete Firmware auf der Maschine: '$VERSION' (erwartet '$EXPECTED_VERSION')"
+[[ "$VERSION" == "3.3.0 "* ]] || die "Unerwartete Firmware auf der Maschine: '$VERSION' (erwartet 3.3.0 ...)"
 ok "Silvia erreichbar, läuft $VERSION"
-if [[ "$(param "$PARAMS_BEFORE" PID_BD_ON show)" == "True" ]]; then
-    warn "Brüherkennung ist auf der Maschine schon einkompiliert – Flashen eigentlich nicht nötig"
-fi
 mkdir -p "$BACKUPS"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 echo "$PARAMS_BEFORE" > "$BACKUPS/params-$STAMP.json"
@@ -131,8 +128,8 @@ ok "Passwörter aus src/userConfig.h wieder entfernt"
 say "4/5 Flashen"
 cat <<EOF
   Ziel:      Silvia $DEVICE_IP ($VERSION)
-  Neu:       3.3.0 + Software-Brüherkennung, BREWPID_DELAY 0
-  Bleibt:    alle Einstellungen (gleiche Version, gleicher Speicheraufbau)
+  Neu:       $(git describe --tags --always --dirty) ($(git branch --show-current))
+  Bleibt:    alle Einstellungen (gleicher Speicheraufbau)
   Risiko:    gering – der ESP8266 übernimmt das Update erst, wenn es komplett angekommen ist.
              Bricht es ab, läuft die alte Firmware weiter.
   Achtung:   Nicht während eines Shots. macOS fragt evtl., ob python eingehende
@@ -162,7 +159,10 @@ for _ in $(seq 1 45); do
     [[ -n "$PARAMS_AFTER" ]] && break
 done
 [[ -n "$PARAMS_AFTER" ]] || die "Silvia nach 90 s nicht wieder im WLAN – WLAN-Daten falsch? Dann per USB neu flashen (siehe tools/flash/README.md)"
-ok "Silvia wieder erreichbar ($(param "$PARAMS_AFTER" VERSION))"
+VERSION_AFTER="$(param "$PARAMS_AFTER" VERSION)"
+[[ "$VERSION_AFTER" == "$NEW_VERSION" ]] \
+    && ok "Silvia wieder erreichbar, läuft $VERSION_AFTER" \
+    || warn "Silvia wieder erreichbar, läuft aber '$VERSION_AFTER' statt '$NEW_VERSION'"
 [[ "$(param "$PARAMS_AFTER" PID_BD_ON show)" == "True" ]] \
     && ok "Brüherkennung jetzt aktiv (Brew-PID-Felder werden angezeigt)" \
     || warn "Brew-PID-Felder werden noch nicht angezeigt – Brüherkennung nicht aktiv?"
