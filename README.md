@@ -38,7 +38,10 @@ The fork is delivered in steps, each flashed and checked with a test coffee:
 3. **Data and web UI** – 15 min history at 1 s, the last 10 shots and the last shot's curve on
    the device, `/api/history`, `/api/shots` and a live event stream; an offline, German,
    mobile-first web UI (Preact, one 14 KB gzipped file in LittleFS, light and dark mode).
-4. Home Assistant via MQTT discovery.
+4. **Home Assistant** – MQTT discovery on the HA Mosquitto broker with its own user `silvia`:
+   measurements, state, last shot, a shot event, set points, steam and PID switches,
+   diagnostics hidden by default; availability via last will, re-announced on HA restarts
+   ([docs/home-assistant.md](docs/home-assistant.md)).
 
 The full specification is [issue #1](https://github.com/64x-lunicorn/clevercoffee/issues/1).
 

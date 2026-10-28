@@ -103,6 +103,8 @@ class SilviaCore {
     static constexpr uint16_t kWindow = 1000;      // heater PWM window and PID output range
 
     explicit SilviaCore(ParamStore *store = nullptr);
+    SilviaCore(const SilviaCore &) = delete;  // the PID keeps pointers into it
+    SilviaCore &operator=(const SilviaCore &) = delete;
 
     void begin(uint32_t nowMs);
 

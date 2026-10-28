@@ -17,6 +17,7 @@
 #include "DisplayRenderer.h"
 #include "EepromStore.h"
 #include "History.h"
+#include "MqttLink.h"
 #include "ISR.h"
 #include "Network.h"
 #include "SilviaCore.h"
@@ -47,7 +48,7 @@ void heaterOff() {
 }
 
 silvia::DeviceInfo deviceInfo() {
-    return {SILVIA_VERSION, network::rssi(), network::connected(), false, ESP.getFreeHeap()};
+    return {SILVIA_VERSION, network::rssi(), network::connected(), mqttlink::connected(), ESP.getFreeHeap()};
 }
 
 void logEvent(const silvia::Event &e) {
@@ -95,6 +96,7 @@ void setup() {
                     },
                     []() { enableTimer1(); }});
     webapi::begin({&core, &history, WEB_USER, WEB_PASS, deviceInfo});
+    mqttlink::begin(&core, MQTT_HOST, MQTT_PORT, MQTT_USER, MQTT_PASS);
 
     initTimer1();
     enableTimer1();
@@ -123,16 +125,18 @@ void loop() {
             logEvent(e);
             history.onEvent(e);
             webapi::publish(e);
+            mqttlink::publish(e);
         }
     }
 
     network::loop(now);
     webapi::loop(now);
+    mqttlink::loop(now, deviceInfo());
 
     const silvia::Snapshot &s = core.snapshot();
     uint32_t displayInterval = s.state == silvia::State::Shot ? 200 : 500;
     if (now - lastDisplayMs >= displayInterval) {
         lastDisplayMs = now;
-        display::draw(displayModel.update(s, now, network::connected(), false, false), now);
+        display::draw(displayModel.update(s, now, network::connected(), mqttlink::enabled(), mqttlink::connected()), now);
     }
 }

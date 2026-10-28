@@ -12,9 +12,11 @@ REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 # Set them in the environment or in the untracked tools/flash/local.env:
 #   SILVIA_HOST=192.0.2.10
 #   SILVIA_SSID=my-wifi
+#   SILVIA_MQTT_HOST=192.0.2.20   # Home Assistant / Mosquitto
 [[ -f "$REPO/tools/flash/local.env" ]] && source "$REPO/tools/flash/local.env"
 DEVICE_IP="${SILVIA_HOST:-silvia.local}"
 DEFAULT_SSID="${SILVIA_SSID:-}"
+DEFAULT_MQTT_HOST="${SILVIA_MQTT_HOST:-}"
 # firmware version that will be built, e.g. "silvia-2"
 NEW_VERSION="$(sed -nE 's/^#define SILVIA_VERSION +"([^"]+)".*/\1/p' "$REPO/src/Version.h")"
 TEMPLATE="$REPO/tools/flash/userConfig.silvia.h"
@@ -34,14 +36,15 @@ protocol() {
     printf '  %s\n' "${LOG[@]}"
 }
 
-write_config() {  # write_config SSID WIFI_PASS OTA_PASS WEB_PASS
+write_config() {  # write_config SSID WIFI_PASS OTA_PASS WEB_PASS MQTT_HOST MQTT_PASS
     python3 -I - "$TEMPLATE" "$CONFIG" "$@" <<'EOF'
 import sys
-template, target, ssid, wifi, ota, web = sys.argv[1:]
+template, target, ssid, wifi, ota, web, mqtt_host, mqtt_pass = sys.argv[1:]
 def c(s):  # C string literal body
     return s.replace("\\", "\\\\").replace('"', '\\"')
 src = open(template).read()
-for name, value in (("WIFI_SSID", ssid), ("WIFI_PASS", wifi), ("OTA_PASS", ota), ("WEB_PASS", web)):
+for name, value in (("WIFI_SSID", ssid), ("WIFI_PASS", wifi), ("OTA_PASS", ota), ("WEB_PASS", web),
+                    ("MQTT_HOST", mqtt_host), ("MQTT_PASS", mqtt_pass)):
     src = src.replace(f"@{name}@", c(value))
 open(target, "w").write(src)
 EOF
@@ -49,7 +52,7 @@ EOF
 }
 
 scrub_config() {  # never leave real secrets in the working tree
-    write_config "@WIFI_SSID@" "@WIFI_PASS@" "@OTA_PASS@" "@WEB_PASS@"
+    write_config "@WIFI_SSID@" "@WIFI_PASS@" "@OTA_PASS@" "@WEB_PASS@" "" "@MQTT_PASS@"
 }
 
 build_web() {
@@ -127,10 +130,20 @@ echo "  Web-Passwort (Benutzer 'silvia', für jede Änderung über Web/API): in 
 read -r -s -p "  Web-Passwort: " WEB_PASS; echo
 [[ ${#WEB_PASS} -ge 8 ]] || die "Web-Passwort kürzer als 8 Zeichen – vermutlich nicht richtig eingefügt"
 ok "Web-Passwort mit ${#WEB_PASS} Zeichen"
+read -r -p "  MQTT-Broker (IP von Home Assistant, leer = MQTT aus)${DEFAULT_MQTT_HOST:+ [$DEFAULT_MQTT_HOST]}: " MQTT_HOST
+MQTT_HOST="${MQTT_HOST:-$DEFAULT_MQTT_HOST}"
+if [[ -n "$MQTT_HOST" ]]; then
+    read -r -s -p "  MQTT-Passwort für Benutzer 'silvia': " MQTT_PASS; echo
+    [[ -n "$MQTT_PASS" ]] || die "MQTT-Passwort leer – Benutzer 'silvia' in Mosquitto anlegen (siehe docs/home-assistant.md)"
+    ok "MQTT an $MQTT_HOST als 'silvia', Passwort mit ${#MQTT_PASS} Zeichen"
+else
+    MQTT_PASS=""
+    warn "MQTT aus"
+fi
 
 # ------------------------------------------------------------------ build
 say "3/5 Bauen (Docker, ca. 1 Minute)"
-write_config "$SSID" "$WIFI_PASS" "$NEW_OTA" "$WEB_PASS"
+write_config "$SSID" "$WIFI_PASS" "$NEW_OTA" "$WEB_PASS" "$MQTT_HOST" "$MQTT_PASS"
 trap scrub_config EXIT
 if ! build; then
     tail -30 "$REPO/.pio-build.log"

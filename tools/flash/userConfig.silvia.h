@@ -23,4 +23,10 @@
 #define WEB_USER "silvia"
 #define WEB_PASS "@WEB_PASS@"
 
+// MQTT to the Home Assistant Mosquitto broker; an empty host disables MQTT
+#define MQTT_HOST "@MQTT_HOST@"     // IP address of the broker
+#define MQTT_PORT 1883
+#define MQTT_USER "silvia"
+#define MQTT_PASS "@MQTT_PASS@"
+
 #endif
