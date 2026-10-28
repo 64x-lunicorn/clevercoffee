@@ -82,6 +82,14 @@ void setup() {
     pinMode(PINHEATER, OUTPUT);
     heaterOff();
 
+    // The relay board on these pins sits in the pump circuit. 3.3.0 (ONLYPID, TRIGGERTYPE HIGH)
+    // drove both LOW at boot, which keeps the brew switch connected to the pump; left floating,
+    // the relays drop out and the pump no longer runs.
+    pinMode(PINVALVE, OUTPUT);
+    digitalWrite(PINVALVE, LOW);
+    pinMode(PINPUMP, OUTPUT);
+    digitalWrite(PINPUMP, LOW);
+
     display::begin();
     display::bootMessage("Silvia", SILVIA_VERSION);
 
