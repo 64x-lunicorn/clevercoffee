@@ -7,6 +7,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "History.h"
 #include "SilviaCore.h"
 
 namespace silvia {
@@ -61,6 +62,15 @@ void writeState(JsonOut &out, const Snapshot &s, const DeviceInfo &device);
 
 /** GET /api/parameters */
 void writeParameters(JsonOut &out, const ParamSet &params);
+
+/** GET /api/shots: last 10 summaries (newest first) and the 1 s curve of the last shot */
+void writeShots(JsonOut &out, const History &history);
+
+/** name of an event on the event stream, e.g. "shot_finished" */
+const char *eventName(EventType type);
+
+/** data of a discrete event on the event stream / MQTT */
+void writeEvent(JsonOut &out, const Event &event);
 
 /** 400 body of POST /api/parameters and /api/command */
 void writeFieldErrors(JsonOut &out, const FieldError *errors, size_t count);

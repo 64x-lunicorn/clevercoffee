@@ -21,3 +21,10 @@ tools/silvia-sim/model.json
 
 # local machine address / WiFi name for the flash script
 tools/flash/local.env
+
+# web UI build output (python3 web/build.py)
+data/
+
+# local tool settings
+.claude/
+.playwright-mcp/

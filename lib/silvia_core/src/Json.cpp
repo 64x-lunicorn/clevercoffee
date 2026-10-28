@@ -210,6 +210,64 @@ void writeParameters(JsonOut &out, const ParamSet &params) {
     out.endArray();
 }
 
+void writeShots(JsonOut &out, const History &history) {
+    out.beginObject();
+    out.key("shots").beginArray();
+    for (int i = 0; i < history.shotCount(); i++) writeShot(out, history.shot(i));
+    out.endArray();
+    out.key("last_curve");
+    if (history.curveLength() == 0) {
+        out.null();
+    } else {
+        out.beginObject();
+        out.key("shot_id").integer(history.curveShotId());
+        out.key("start_uptime_s").num(history.curveStartMs() / 1000.0, 1);
+        out.key("interval_s").integer(1);
+        out.key("temperature").beginArray();
+        for (int i = 0; i < history.curveLength(); i++) out.num(History::temp(history.curveSample(i)), 1);
+        out.endArray();
+        out.key("heater").beginArray();
+        for (int i = 0; i < history.curveLength(); i++) out.num(History::heaterPercent(history.curveSample(i)), 1);
+        out.endArray();
+        out.endObject();
+    }
+    out.endObject();
+}
+
+const char *eventName(EventType type) {
+    switch (type) {
+        case EventType::ShotStarted: return "shot_started";
+        case EventType::ShotFinished: return "shot_finished";
+        case EventType::ShotComplete: return "shot_complete";
+        case EventType::ErrorRaised: return "error_raised";
+        case EventType::ErrorCleared: return "error_cleared";
+        case EventType::ReadyReached: return "ready_reached";
+    }
+    return "unknown";
+}
+
+void writeEvent(JsonOut &out, const Event &e) {
+    out.beginObject();
+    out.key("event").str(eventName(e.type));
+    out.key("uptime_s").num(e.atMs / 1000.0, 1);
+    switch (e.type) {
+        case EventType::ShotStarted:
+        case EventType::ShotFinished:
+        case EventType::ShotComplete:
+            out.key("shot");
+            writeShot(out, e.shot);
+            break;
+        case EventType::ErrorRaised:
+        case EventType::ErrorCleared:
+            out.key("error").str(errorName(e.error));
+            break;
+        case EventType::ReadyReached:
+            out.key("first_since_boot").boolean(e.firstSinceBoot);
+            break;
+    }
+    out.endObject();
+}
+
 void writeFieldErrors(JsonOut &out, const FieldError *errors, size_t count) {
     out.beginObject();
     out.key("errors").beginObject();

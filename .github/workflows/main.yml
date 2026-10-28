@@ -17,4 +17,6 @@ jobs:
       - name: Firmware build (placeholder config)
         run: |
           cp tools/flash/userConfig.silvia.h src/userConfig.h
+          python3 web/build.py
           pio run -e nodemcuv2_ota
+          pio run -e nodemcuv2_ota -t buildfs
