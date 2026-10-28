@@ -30,8 +30,11 @@ The fork is delivered in steps, each flashed and checked with a test coffee:
 1. **Cleanup** – code for other machines, the ESP32, scales, ToF water level, pressure
    sensors, brew/steam/power switches, backflush, InfluxDB and the E-trigger removed.
    Behaviour unchanged.
-2. Hardware-free, unit-tested control core with the safety fixes, WiFi auto-reconnect and a
-   new display.
+2. **Core** – all decisions in a hardware-free, unit-tested core (`lib/silvia_core`): sensor
+   gate, emergency stop in every state, machine states, PID tunings, shot detection with
+   back-dated start and end, one parameter table. WiFi reconnects forever in the background,
+   the heater decision is applied before the display refresh, new display with shot timer and
+   plain-language errors, JSON API ([docs/api.md](docs/api.md)) with basic auth for writes.
 3. On-device history and shot log, JSON API, offline web UI.
 4. Home Assistant via MQTT discovery.
 
@@ -59,7 +62,9 @@ The full specification is [issue #1](https://github.com/64x-lunicorn/clevercoffe
 
 | Path | Content |
 |---|---|
-| `src/` | firmware |
+| `lib/silvia_core/` | hardware-free core: everything that decides something |
+| `src/` | thin hardware adapters: sensor, heater ISR, EEPROM, WiFi/OTA, web API, display |
+| `docs/api.md` | HTTP API |
 | `test/` | native Unity tests (`pio test -e native`) |
 | `tools/flash/` | config template, flash script, vendored `espota.py` |
 | `tools/silvia-sim/` | recorded shots (`data/*.jsonl`: time, temperature, heater power) and the test-vector generator |

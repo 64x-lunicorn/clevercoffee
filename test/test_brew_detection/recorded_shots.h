@@ -7,6 +7,8 @@ struct RecordedShot {
     int count;
     const int *drawStartsMs;
     int drawCount;
+    const int *expectedStartMs;  // shot start/end from the 1 Hz log, per draw
+    const int *expectedEndMs;
 };
 
 static const short shot1Tenths[] = {
@@ -125,6 +127,8 @@ static const short shot1Tenths[] = {
     950, 950, 950, 950, 950, 950, 950,
 };
 static const int shot1DrawStartsMs[] = {27080};
+static const int shot1ExpectedStartMs[] = {26090};
+static const int shot1ExpectedEndMs[] = {66200};
 
 static const short shot2Tenths[] = {
     937, 937, 937, 937, 937, 937, 936, 936, 936, 936, 936, 935, 935, 935, 935, 935, 935, 935, 935, 935,
@@ -246,6 +250,8 @@ static const short shot2Tenths[] = {
     961, 961, 961, 961, 961, 961, 961,
 };
 static const int shot2DrawStartsMs[] = {233660, 793230};
+static const int shot2ExpectedStartMs[] = {233660, 794230};
+static const int shot2ExpectedEndMs[] = {265770, 830350};
 
 static const short shot3Tenths[] = {
     944, 944, 944, 943, 943, 943, 943, 943, 944, 944, 944, 944, 944, 944, 944, 944, 944, 944, 944, 944,
@@ -295,9 +301,11 @@ static const short shot3Tenths[] = {
     949, 949, 949, 949, 949, 950, 950, 950, 950, 950, 950, 950,
 };
 static const int shot3DrawStartsMs[] = {28080};
+static const int shot3ExpectedStartMs[] = {28080};
+static const int shot3ExpectedEndMs[] = {60760};
 
 static const RecordedShot recordedShots[] = {
-    {"shot1", shot1Tenths, 2247, shot1DrawStartsMs, 1},
-    {"shot2", shot2Tenths, 2327, shot2DrawStartsMs, 2},
-    {"shot3", shot3Tenths, 892, shot3DrawStartsMs, 1},
+    {"shot1", shot1Tenths, 2247, shot1DrawStartsMs, 1, shot1ExpectedStartMs, shot1ExpectedEndMs},
+    {"shot2", shot2Tenths, 2327, shot2DrawStartsMs, 2, shot2ExpectedStartMs, shot2ExpectedEndMs},
+    {"shot3", shot3Tenths, 892, shot3DrawStartsMs, 1, shot3ExpectedStartMs, shot3ExpectedEndMs},
 };

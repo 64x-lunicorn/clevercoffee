@@ -24,7 +24,8 @@ SILVIA_SSID=my-wifi      # offered as default at the WiFi prompt
 1. **Check**: template present, tag `v3.3.0-esp8266` present, Docker running, machine
    reachable and running the expected firmware. All machine parameters are backed up to
    `tools/flash/backups/` (untracked).
-2. **Credentials**: WiFi password, current and new OTA password are pasted (hidden input).
+2. **Credentials**: WiFi password, current and new OTA password and the web password (user
+   `silvia`, needed for every change through the web UI/API) are pasted (hidden input).
    Keep them in 1Password; they only live in the shell process and, during the build, in
    `src/userConfig.h` (mode 600, untracked).
 3. **Build** in `python:3.12-slim` with PlatformIO 6.1.18. The xtensa toolchain of
@@ -34,19 +35,16 @@ SILVIA_SSID=my-wifi      # offered as default at the WiFi prompt
    the container). macOS may ask whether python may accept incoming connections → Allow.
    The ESP8266 only switches to the new firmware once the upload is complete; if the upload
    breaks off, the old firmware keeps running.
-5. **Verify** after the reboot: the machine is back, PID is on and the settings are
-   unchanged. A protocol is printed at the end.
+5. **Verify** after the reboot: the machine is back, runs the version from `src/Version.h`,
+   PID is on and every setting is unchanged (`machine.py` reads both the 3.3.0 `/parameters`
+   and the fork's `/api/*`). A protocol is printed at the end.
 
 ## Config
 
-`userConfig.silvia.h` is the build configuration. The `@...@` placeholders are filled in by
-the script. Notable settings compared to the upstream sample config:
-
-| Setting | Upstream sample | Silvia | Why |
-|---|---|---|---|
-| `BREWDETECTION` | 0 | **1** | software brew detection from the temperature drop (the machine has no brew switch) |
-| `BREWPID_DELAY` | 10 | **0** | 3.3.0 freezes the PID output during the delay instead of stopping the heater |
-| `OTAPASS` | `otapass` | prompted | the default lets anyone on the WiFi flash the heater controller |
+`userConfig.silvia.h` only holds names and secrets (WiFi, OTA password, web password); the
+`@...@` placeholders are filled in by the script. All settings live in the parameter table
+(`lib/silvia_core/src/Params.cpp`) and the machine's EEPROM, which keeps the 3.3.0 layout so
+stored values survive every flash.
 
 ## Recovery over USB
 
