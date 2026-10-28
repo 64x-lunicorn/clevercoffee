@@ -618,6 +618,140 @@ void test_json_escapes_and_reports_overflow() {
     TEST_ASSERT_TRUE(tiny.overflow());
 }
 
+// ---------------------------------------------------------------- standby
+
+static const float kStandbyS = 3600;  // the default of 60 min
+
+// the first tick at which the idle time since begin() is over
+static void holdUntilJustBeforeStandby(Rig &rig, float raw, float idleS = kStandbyS) {
+    rig.hold(raw, idleS - 0.4f);
+}
+
+void test_standby_after_the_idle_time_and_the_heater_stays_off() {
+    Rig rig;
+    holdUntilJustBeforeStandby(rig, 96);
+    TEST_ASSERT_EQUAL(State::Ready, rig.s().state);
+    rig.feed(96);
+    TEST_ASSERT_EQUAL(State::Standby, rig.s().state);
+    TEST_ASSERT_EQUAL_STRING("standby", stateName(rig.s().state));
+    TEST_ASSERT_EQUAL_STRING("Standby", stateLabel(rig.s().state));
+    TEST_ASSERT_EQUAL(0, rig.duty);
+    TEST_ASSERT_FALSE(rig.s().ready);
+
+    rig.rampTo(96, 60, 0.1f);  // cooling down far below the set point
+    TEST_ASSERT_EQUAL(State::Standby, rig.s().state);
+    TEST_ASSERT_EQUAL(0, rig.duty);
+}
+
+void test_heating_up_alone_is_no_activity() {
+    Rig rig;
+    rig.feed(25);
+    rig.rampTo(25, 96, 0.2f);
+    TEST_ASSERT_EQUAL(State::Ready, rig.s().state);
+    rig.hold(96, kStandbyS - (rig.now - 1000) / 1000.0f - 0.4f);
+    TEST_ASSERT_EQUAL(State::Ready, rig.s().state);
+    rig.feed(96);
+    TEST_ASSERT_EQUAL(State::Standby, rig.s().state);
+}
+
+void test_accepted_writes_restart_the_idle_time() {
+    const char *writes[][2] = {{"brew_setpoint", "96"}, {"steam_on", "0"}, {"pid_on", "1"}};
+    for (auto &w : writes) {
+        Rig rig;
+        rig.hold(96, 3000);
+        TEST_ASSERT_EQUAL_MESSAGE(ParamError::None, rig.set(w[0], w[1]), w[0]);  // unchanged value: still use
+        rig.hold(96, 3000);
+        TEST_ASSERT_EQUAL_MESSAGE(State::Ready, rig.s().state, w[0]);
+        rig.hold(96, 600);
+        TEST_ASSERT_EQUAL_MESSAGE(State::Standby, rig.s().state, w[0]);
+    }
+}
+
+void test_steam_on_restarts_the_idle_time() {
+    Rig rig;
+    rig.hold(96, 3000);
+    TEST_ASSERT_EQUAL(ParamError::None, rig.set("steam_on", "1"));
+    rig.hold(96, 3000);
+    TEST_ASSERT_EQUAL(State::Steam, rig.s().state);
+    rig.hold(96, 600);
+    TEST_ASSERT_EQUAL(State::Standby, rig.s().state);
+    TEST_ASSERT_EQUAL(0, rig.duty);
+}
+
+void test_rejected_writes_are_no_activity() {
+    Rig rig;
+    rig.hold(96, 3000);
+    TEST_ASSERT_EQUAL(ParamError::OutOfRange, rig.set("brew_setpoint", "150"));
+    rig.hold(96, 600);
+    TEST_ASSERT_EQUAL(State::Standby, rig.s().state);
+}
+
+void test_a_shot_restarts_the_idle_time() {
+    Rig rig;
+    rig.hold(96, 3000);
+    rig.rampTo(96, 89, 0.3f);
+    rig.hold(89, 2);
+    rig.rampTo(89, 96, 0.1f);
+    TEST_ASSERT_EQUAL(1, rig.s().shotCount);
+    rig.hold(96, 3000);
+    TEST_ASSERT_NOT_EQUAL(State::Standby, rig.s().state);
+    rig.hold(96, 600);
+    TEST_ASSERT_EQUAL(State::Standby, rig.s().state);
+}
+
+void test_standby_time_is_configurable_and_whole_minutes_only() {
+    Rig rig;
+    TEST_ASSERT_EQUAL_DOUBLE(60, rig.core.params().get(kStandbyMin));
+    TEST_ASSERT_EQUAL(ParamError::OutOfRange, rig.set("standby_min", "0"));
+    TEST_ASSERT_EQUAL(ParamError::OutOfRange, rig.set("standby_min", "29"));
+    TEST_ASSERT_EQUAL(ParamError::OutOfRange, rig.set("standby_min", "241"));
+    TEST_ASSERT_EQUAL(ParamError::Invalid, rig.set("standby_min", "45.5"));
+    TEST_ASSERT_EQUAL(ParamError::None, rig.set("standby_min", "30"));
+    TEST_ASSERT_EQUAL_DOUBLE(30, rig.store.slots[kSlotStandbyMin]);
+    holdUntilJustBeforeStandby(rig, 96, 1800);  // the write itself restarted the idle time at boot + 0
+    rig.feed(96);
+    TEST_ASSERT_EQUAL(State::Standby, rig.s().state);
+}
+
+void test_only_a_boot_leaves_standby() {
+    Rig rig;
+    rig.hold(96, kStandbyS);
+    TEST_ASSERT_EQUAL(State::Standby, rig.s().state);
+
+    TEST_ASSERT_EQUAL(ParamError::None, rig.set("pid_on", "0"));
+    TEST_ASSERT_EQUAL(ParamError::None, rig.set("pid_on", "1"));
+    TEST_ASSERT_EQUAL(ParamError::None, rig.set("steam_on", "1"));
+    TEST_ASSERT_EQUAL(ParamError::None, rig.set("brew_setpoint", "94"));
+    rig.rampTo(96, 80, 0.3f);  // a falling curve is no shot in standby either
+    TEST_ASSERT_EQUAL(State::Standby, rig.s().state);
+    TEST_ASSERT_EQUAL(0, rig.duty);
+    TEST_ASSERT_EQUAL(0, rig.s().shotCount);
+    TEST_ASSERT_EQUAL_DOUBLE(94, rig.core.params().get(kBrewSetpoint));  // stored for the next boot
+
+    rig.begin();  // power cut and restored
+    rig.feed(80);
+    TEST_ASSERT_EQUAL(State::Heating, rig.s().state);
+    TEST_ASSERT_GREATER_THAN(0, rig.duty);
+}
+
+void test_errors_win_over_standby_and_safety_checks_keep_running() {
+    Rig rig;
+    rig.hold(96, kStandbyS);
+    TEST_ASSERT_EQUAL(State::Standby, rig.s().state);
+
+    for (int i = 0; i < 10; i++) rig.feed(222);
+    TEST_ASSERT_EQUAL(State::Error, rig.s().state);
+    TEST_ASSERT_EQUAL(ErrorKind::Sensor, rig.s().error);
+    for (int i = 0; i < 25; i++) rig.feed(90);
+    TEST_ASSERT_EQUAL(ErrorKind::None, rig.s().error);
+    TEST_ASSERT_EQUAL(State::Standby, rig.s().state);  // the fault is gone, standby is not
+    TEST_ASSERT_EQUAL(0, rig.duty);
+
+    rig.rampTo(90, 121, 0.5f);  // e.g. a stuck SSR keeps heating
+    TEST_ASSERT_EQUAL(ErrorKind::OverTemp, rig.s().error);
+    TEST_ASSERT_EQUAL(State::Error, rig.s().state);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_first_reading_222_at_boot_never_heats_and_raises_sensor_error);
@@ -653,5 +787,14 @@ int main() {
     RUN_TEST(test_state_document);
     RUN_TEST(test_parameters_and_errors_documents);
     RUN_TEST(test_json_escapes_and_reports_overflow);
+    RUN_TEST(test_standby_after_the_idle_time_and_the_heater_stays_off);
+    RUN_TEST(test_heating_up_alone_is_no_activity);
+    RUN_TEST(test_accepted_writes_restart_the_idle_time);
+    RUN_TEST(test_steam_on_restarts_the_idle_time);
+    RUN_TEST(test_rejected_writes_are_no_activity);
+    RUN_TEST(test_a_shot_restarts_the_idle_time);
+    RUN_TEST(test_standby_time_is_configurable_and_whole_minutes_only);
+    RUN_TEST(test_only_a_boot_leaves_standby);
+    RUN_TEST(test_errors_win_over_standby_and_safety_checks_keep_running);
     return UNITY_END();
 }

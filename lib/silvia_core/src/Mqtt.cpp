@@ -47,6 +47,8 @@ const Entity entities[] = {
      nullptr, false},
     {"switch", "steam", "Dampf", Source::Settings, "steam_on", nullptr, nullptr, "mdi:kettle-steam", false},
     {"switch", "pid", "Regelung", Source::Settings, "pid_on", nullptr, nullptr, "mdi:thermostat", false},
+    {"number", "standby_min", "Standby nach", Source::Settings, "standby_min", "duration", "min", "mdi:sleep",
+     false},
     {"event", "shot", "Shot", Source::Event, nullptr, nullptr, nullptr, "mdi:coffee-outline", false},
     {"sensor", "wifi_signal", "WLAN-Signal", Source::State, "rssi", "signal_strength", "dBm", nullptr, true},
     {"sensor", "firmware", "Firmware", Source::State, "version", nullptr, nullptr, "mdi:chip", true},
@@ -79,7 +81,7 @@ void valueTemplate(JsonOut &out, const Entity &e, bool onOff) {
 void enumOptions(JsonOut &out, const Entity &e) {
     out.key("options").beginArray();
     if (strcmp(e.id, "state") == 0) {
-        for (int s = (int)State::Off; s <= (int)State::Error; s++) out.str(stateName((State)s));
+        for (int s = (int)State::Off; s <= (int)kLastState; s++) out.str(stateName((State)s));
     } else {
         for (int k = (int)ErrorKind::None; k <= (int)ErrorKind::OverTemp; k++) out.str(errorName((ErrorKind)k));
     }
@@ -190,6 +192,7 @@ void writeSettings(JsonOut &out, const ParamSet &params) {
     out.key("pid_tv").num(params.get(kPidTv), 1);
     out.key("pid_i_max").num(params.get(kPidIMax), 0);
     out.key("bd_pid_on").boolean(params.flag(kBdPidOn));
+    out.key("standby_min").num(params.get(kStandbyMin), 0);
     out.endObject();
 }
 
@@ -205,7 +208,9 @@ void writeShotEvent(JsonOut &out, const ShotSummary &shot) {
     out.endObject();
 }
 
-bool Cadence::idle(const Snapshot &s) { return s.state == State::Ready || s.state == State::Off; }
+bool Cadence::idle(const Snapshot &s) {
+    return s.state == State::Ready || s.state == State::Off || s.state == State::Standby;
+}
 
 bool Cadence::due(uint32_t nowMs, const Snapshot &s) {
     bool changed = !started || s.state != lastState || s.ready != lastReady || s.error != lastError;

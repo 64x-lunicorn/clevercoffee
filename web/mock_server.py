@@ -16,9 +16,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 LOG = ROOT / "tools" / "silvia-sim" / "data" / "shot1.jsonl"
-STATES = ["off", "booting", "heating", "ready", "shot", "recovering", "steam", "error"]
+STATES = ["off", "booting", "heating", "ready", "shot", "recovering", "steam", "error", "standby"]
 LABELS = {"off": "Aus", "booting": "Start", "heating": "Aufheizen", "ready": "Bereit", "shot": "Bezug",
-          "recovering": "Nachschwingen", "steam": "Dampf", "error": "Fehler"}
+          "recovering": "Nachschwingen", "steam": "Dampf", "error": "Fehler", "standby": "Standby"}
 AUTH = "Basic " + base64.b64encode(b"silvia:test").decode()
 
 PARAMS = [
@@ -39,6 +39,7 @@ PARAMS = [
     ("bd_tv", "Brüh-PID Tv", "number", "s", 0, 999, 0.1, 20, True),
     ("bd_time", "Brüh-PID-Zeit", "number", "s", 1, 180, 1, 30, True),
     ("bd_sensitivity", "Erkennungs-Empfindlichkeit", "number", "", 0, 999, 1, 120, True),
+    ("standby_min", "Standby nach", "number", "min", 30, 240, 1, 60, False),
 ]
 
 

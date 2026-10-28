@@ -31,6 +31,7 @@ enum StorageSlot : int8_t {
     kSlotBrewTempOffset = 23,
     kSlotUseBdPid = 25,
     kSlotSteamSetpoint = 26,
+    kSlotStandbyMin = 50,  // new in the fork: a byte in a free area of the 3.3.0 layout
 };
 
 enum class ParamType : uint8_t { Number, Bool };
@@ -39,7 +40,8 @@ enum ParamFlags : uint8_t {
     kWritable = 1 << 0,  // can be changed through web/API/MQTT
     kExpert = 1 << 1,    // shown in the collapsed expert section of the web UI
     kMqtt = 1 << 2,      // exposed as a Home Assistant control entity
-    kDiagnostic = 1 << 3 // exposed to Home Assistant as a (hidden) diagnostic entity
+    kDiagnostic = 1 << 3, // exposed to Home Assistant as a (hidden) diagnostic entity
+    kInteger = 1 << 4     // whole numbers only
 };
 
 enum ParamId : uint8_t {
@@ -59,6 +61,7 @@ enum ParamId : uint8_t {
     kBdTv,
     kBdTime,
     kBdSensitivity,
+    kStandbyMin,
     kParamCount
 };
 

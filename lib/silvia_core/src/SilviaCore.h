@@ -7,6 +7,9 @@
  * Parameter writes and commands are validated against the parameter table before they reach
  * the controller.
  *
+ * Standby: after standby_min without activity (a shot, or any accepted write, which includes
+ * steam on) the heater stays off until the next boot. It backs up the Home Assistant auto-off.
+ *
  * The PID library reads millis() itself; on the device that is the same clock as nowMs, on
  * the host the tests set the stubbed millis() to nowMs.
  */
@@ -22,8 +25,9 @@
 
 namespace silvia {
 
-/** machine state as shown to the user (web, display, Home Assistant) */
-enum class State : uint8_t { Off, Booting, Heating, Ready, Shot, Recovering, Steam, Error };
+/** machine state as shown to the user (web, display, Home Assistant); new states go at the end */
+enum class State : uint8_t { Off, Booting, Heating, Ready, Shot, Recovering, Steam, Error, Standby };
+const State kLastState = State::Standby;
 
 enum class ErrorKind : uint8_t { None, Sensor, OverTemp };
 
@@ -135,6 +139,7 @@ class SilviaCore {
     void updateMode();
     void updateErrors(uint32_t nowMs);
     void updateShot(uint32_t nowMs, uint32_t unixTime, bool shotChanged);
+    void updateStandby(uint32_t nowMs);
     void updateState(uint32_t nowMs);
     uint16_t control(uint32_t nowMs);
     void applyTunings(double kp, double tn, double tv);
@@ -160,6 +165,8 @@ class SilviaCore {
     State state = State::Booting;
     bool ready = false;
     bool everReady = false;
+    bool standby = false;
+    uint32_t lastActivityMs = 0;
 
     uint32_t shotCount = 0;
     bool hasLastShot = false;

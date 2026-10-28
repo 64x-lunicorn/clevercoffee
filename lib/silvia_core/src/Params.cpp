@@ -55,6 +55,10 @@ const char lBdSens[] CORE_PROGMEM = "Erkennungs-Empfindlichkeit";
 const char hBdSens[] CORE_PROGMEM =
     "Ein Shot wird erkannt, wenn die Temperatur schneller als dieser Wert (1/1000 °C pro s) fällt. "
     "Kleiner = empfindlicher, aber Gefahr von Fehlerkennungen. 0 = Erkennung aus.";
+const char lStandby[] CORE_PROGMEM = "Standby nach";
+const char hStandby[] CORE_PROGMEM =
+    "So lange ohne Shot, Dampf oder Änderung, dann geht die Heizung aus (Standby). Aufwecken: Strom aus "
+    "und wieder an. Sicherheitsnetz, falls Home Assistant nicht abschaltet; lässt sich nicht abschalten.";
 
 const ParamDef defs[kParamCount] = {
     // key, legacy, label, help, unit, type, min, max, step, default, slot, byte, flags
@@ -90,6 +94,8 @@ const ParamDef defs[kParamCount] = {
      false, kWritable | kExpert},
     {"bd_sensitivity", "PID_BD_BREWSENSITIVITY", lBdSens, hBdSens, "", ParamType::Number, 0, 999, 1, 120,
      kSlotBdThreshold, false, kWritable | kExpert},
+    {"standby_min", "STANDBY_MIN", lStandby, hStandby, "min", ParamType::Number, 30, 240, 1, 60,
+     kSlotStandbyMin, true, kWritable | kMqtt | kInteger},
 };
 
 const char *const readOnlyKeys[] = {"temperature", "TEMP", "version", "VERSION", "state", "heater",
@@ -130,6 +136,7 @@ ParamError checkParamValue(ParamId id, double value) {
     if (!(d.flags & kWritable)) return ParamError::ReadOnly;
     if (value - value != 0) return ParamError::Invalid;  // NAN or infinite
     if (d.type == ParamType::Bool && value != 0 && value != 1) return ParamError::Invalid;
+    if ((d.flags & kInteger) && value != floor(value)) return ParamError::Invalid;
     // limits are floats: compare with a little slack so 11.5 or 0.1 steps are not rejected by rounding
     if (value < d.min - 1e-6 || value > d.max + 1e-6) return ParamError::OutOfRange;
     return ParamError::None;
