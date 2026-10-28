@@ -59,8 +59,8 @@ build_web() {
     python3 -I "$REPO/web/build.py" >/dev/null
 }
 
-cleanup_bins() {
-    cleanup_bins "$FS_BIN"
+cleanup_bins() {  # the images contain the compiled-in passwords
+    rm -f "$BIN" "${BIN%.bin}.elf" "$FS_BIN"
 }
 
 build() {
