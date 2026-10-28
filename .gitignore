@@ -12,3 +12,12 @@ src/userConfig.h
 
 platformio_extra.ini
 **/rancilio-pid.ino.cpp
+
+# silvia flashing
+.pio-build.log
+tools/flash/backups/
+tools/silvia-sim/model.json
+**/__pycache__
+
+# local machine address / WiFi name for the flash script
+tools/flash/local.env

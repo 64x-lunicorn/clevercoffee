@@ -1,60 +1,67 @@
-# CleverCoffee
-(formerly Rancilio PID)
+# Clever Coffee – Silvia-only fork
 
-<div align="center">
-<img src="https://img.shields.io/github/workflow/status/rancilio-pid/ranciliopid/Build/master">
-<img src="https://img.shields.io/github/last-commit/rancilio-pid/ranciliopid/master"><br>
-<a href='https://ko-fi.com/clevercoffee' target='_blank'><img height='35' style='border:0px;height:46px;' src='https://az743702.vo.msecnd.net/cdn/kofi3.png?v=0' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
-</div>
+This is a **hard fork** of [Clever Coffee](https://github.com/rancilio-pid/clevercoffee)
+(formerly Rancilio PID), based on the last ESP8266 release `v3.3.0-esp8266`. It supports
+exactly one machine:
 
-# About
+| | |
+|---|---|
+| Machine | Rancilio Silvia E |
+| Board | NodeMCU (ESP8266) on the Clever Coffee PCB |
+| Sensor | TSIC306 |
+| Display | SSD1306 128×64 (I2C) |
+| Control | PID only (no pump/valve relays, no brew or steam switch), software brew detection |
 
-This project implements a PID controller for stable and accurate temperature control, originally for Rancilio Silvia espresso machines but also includes support for Gaggia and Quickmill machines. Others can easily be added or are already compatible.
+If you are looking for a general-purpose PID controller for your espresso machine, use the
+upstream project: <https://github.com/rancilio-pid/clevercoffee> and
+<https://clevercoffee.de>. Nothing from this fork is intended to be merged back.
 
-Additional features include:
+## Credits and licence
 
-* brew timer
-* pre-infusion (reduced initial pressure using a dimmer for the pump)
-* brew by weight (using weight cells, no support for external scales yet)
-* pressure monitoring
-* water level monitoring
+All credit for the original firmware, hardware and documentation goes to the Clever Coffee /
+Rancilio PID authors and contributors. This fork is distributed under the same licence,
+the GNU General Public License v2 (see [LICENSE](LICENSE)). Files changed in this fork carry
+a modification notice.
 
-The hardware has a small footprint and can easily fit also into most smaller espresso machines. The original wiring of the machine (mostly) remains and is only extended. The machine can be easily reversed to the orignal state after the conversion.
+## Status
 
-The project has been in active development and supported for 4 years with continuous improvements. Hundreds of machines have been converted to PID control already.
+The fork is delivered in steps, each flashed and checked with a test coffee:
 
-You can find our project website here: [Clever Coffee Website](https://clevercoffee.de).
+1. **Cleanup** – code for other machines, the ESP32, scales, ToF water level, pressure
+   sensors, brew/steam/power switches, backflush, InfluxDB and the E-trigger removed.
+   Behaviour unchanged.
+2. Hardware-free, unit-tested control core with the safety fixes, WiFi auto-reconnect and a
+   new display.
+3. On-device history and shot log, JSON API, offline web UI.
+4. Home Assistant via MQTT discovery.
 
-This software is Open Source: free of charge for you and customizable to your personal needs. 
+The full specification is [issue #1](https://github.com/64x-lunicorn/clevercoffee/issues/1).
 
-We recommend you to have a look at the manual before starting a build, you can find the german one [here](https://rancilio-pid.github.io/ranciliopid-handbook/). It is currently being reworked to include all the latest features. The english one is sadly still very outdated but will also be updated soon. 
+## Build, test, flash
 
-Our chat for collaboration and questions can be found[here](https://chat.rancilio-pid.de).
+- Native unit tests (on the host, no machine needed):
 
-Video tutorial on how to flash the firmware (a little outdated but mostly still valid):<br>
-https://youtu.be/KZPjisOEcQ4
+  ```bash
+  ~/.platformio/penv/bin/pio test -e native
+  ```
 
-## Version
-ESP8266 Version 3.1.3
+- Firmware build only (Docker; the espressif8266 2.6.x xtensa toolchain is x86-only):
 
-## What is possible after installation into your espresso machine? 
- * Control of the brewing temperature with an accuracy of up to +/- 0,1°.
- * Reach the target temperature within 8 to 12 minutes after switching on (you should however wait a bit longer, e.g. 20 min depending on the machine to heat up brew head etc.)
- * **NEW** Control all parameters and see temperature and heater graphs on a web page hosted on the ESP controller
- * PID for steam mode with own parameters and target temperature (can be enabled in the web interface/MQTT or using the steam switch when all features are built in) 
- * Control the brewing time (including pre-infusion) when all features are built in.
- * Integration of a scale function, allows brewing by weight.
- * Integration of a water level sensor.
- * Multiple designs for the display, possibility to integrate further designs easily (including vertical template)
- * **NEW** MQTT (IoT) support to manipulate all important parameters.
- * **NEW** Transition from steam mode to normal mode optimized.
- * Brew switch detection also supported using an optocoupler when using OnlyPID ([details](https://rancilio-pid.github.io/ranciliopid-handbook/de/customization/brueherkennung.html#konfiguration-der-erkennung)).
- * Shot timer adjustable to see the reference time.
- * Support for Siliva E machines: trigger with definable interval for a relay to bypass the Eco function
- * Extended data monitoring via Influxdb/Grafana.
- * Over-The-Air updates of the firmware are possible via Wifi
+  ```bash
+  tools/flash/flash-silvia.sh --build
+  ```
 
-User feedback and suggestions for further development of the software are most welcome.
-You are welcome to help us in our mission to make better espresso :)
+- Build and flash over the air: `tools/flash/flash-silvia.sh` – see
+  [tools/flash/README.md](tools/flash/README.md). Credentials are prompted at flash time and
+  never stored in the repository.
 
-Thanks to every single supporter!
+## Repository layout
+
+| Path | Content |
+|---|---|
+| `src/` | firmware |
+| `test/` | native Unity tests (`pio test -e native`) |
+| `tools/flash/` | config template, flash script, vendored `espota.py` |
+| `tools/silvia-sim/` | recorded shots (`data/*.jsonl`: time, temperature, heater power) and the test-vector generator |
+| `data/` | web UI files for LittleFS |
+| `hardware/`, `img/` | upstream PCB and wiring documentation |

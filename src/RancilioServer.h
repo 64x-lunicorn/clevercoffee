@@ -2,18 +2,14 @@
  * @file RancilioServer.h
  *
  * @brief Embedded webserver
+ *
+ * Modified 2026 for the Silvia-only fork (github.com/64x-lunicorn/clevercoffee).
  */
 
 #include <Arduino.h>
 
-#ifdef ESP32
-    #include <WiFi.h>
-    #include <AsyncTCP.h>
-    #include "FS.h"
-#elif defined(ESP8266)
-    #include <ESP8266WiFi.h>
-    #include <ESPAsyncTCP.h>
-#endif
+#include <ESP8266WiFi.h>
+#include <ESPAsyncTCP.h>
 
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
@@ -22,6 +18,8 @@
 #include <functional>
 
 #include "userConfig.h"
+#include "ISR.h"
+#include "ParameterInput.h"
 
 
 enum EditableKind {
@@ -52,11 +50,7 @@ double curTemp = 0.0;
 double tTemp = 0.0;
 double hPower = 0.0;
 
-#if defined(ESP8266)
-    #define HISTORY_LENGTH 120    //10 mins of values
-#elif defined(ESP32)
-    #define HISTORY_LENGTH 720    //60 mins of values
-#endif
+#define HISTORY_LENGTH 120    //10 mins of values
 
 static float tempHistory[3][HISTORY_LENGTH] = {0};
 int historyCurrentIndex = 0;
@@ -66,7 +60,7 @@ void serverSetup();
 void setEepromWriteFcn(int (*fcnPtr)(void));
 
 // We define these in rancilio-pid.cpp
-#define EDITABLE_VARS_LEN 26
+#define EDITABLE_VARS_LEN 21
 extern std::vector<editable_t> editableVars;
 
 // EEPROM
@@ -258,7 +252,7 @@ String getHeader(String varName) {
 }
 
 String staticProcessor(const String& var) {
-    skipHeaterISR = true;
+    HeaterIsrPause heaterIsrPause;
 
     //try replacing var for variables in editableVars
     if (var.startsWith("VAR_EDIT_")) {
@@ -288,8 +282,6 @@ String staticProcessor(const String& var) {
         debugPrintf("Fragment %s not found\n", varLower.c_str());
     }
 
-    skipHeaterISR = false;
-
     //didn't find a value for the var, replace var with empty string
     return String();
 }
@@ -316,26 +308,14 @@ void serverSetup() {
         request->redirect("/");
     });
 
-    server.on("/toggleBackflush", HTTP_POST, [](AsyncWebServerRequest *request) {
-        int backflush = flipUintValue(backflushON);
-
-        setBackflush(backflush);
-        debugPrintf("Toggle backflush mode: %i \n", backflush);
-
-        request->redirect("/");
-    });
-
     server.on("/parameters", HTTP_GET | HTTP_POST, [](AsyncWebServerRequest *request) {
         //stop writing to heater in ISR method (digitalWrite) as it causes crashes when called at the same time as flash is read or written
-        skipHeaterISR = true;
+        HeaterIsrPause heaterIsrPause;
 
         if (request->method() == 2) {   //returns values from WebRequestMethod enum -> 2 == HTTP_POST
             //update all given params and match var name in editableVars
             int params = request->params();
-            /*String m = "Got ";
-            m += params;
-            m += " request parameters: <br />";
-            */
+            String rejected;
 
             for (int i = 0 ; i < params; i++) {
                 AsyncWebParameter* p = request->getParam(i);
@@ -351,49 +331,44 @@ void serverSetup() {
                         continue;
                     }
 
-                    /*
-                    m += "Setting ";
-                    m += e.displayName;
-                    m += " from ";
-                    */
+                    if (e.type == kCString) {
+                        break;  // strings are not writable
+                    }
+
+                    bool integral = e.type == kInteger || e.type == kUInt8;
+                    double newVal;
+                    ParamInput result = parseParameterValue(varName.c_str(), p->value().c_str(),
+                                                            e.minValue, e.maxValue, integral, newVal);
+
+                    if (result == ParamInput::ReadOnly) {
+                        break;  // the web interface posts TEMP/VERSION too, never write them back
+                    }
+
+                    if (result != ParamInput::Ok) {
+                        if (!rejected.isEmpty()) {
+                            rejected += ", ";
+                        }
+                        rejected += varName;
+                        break;
+                    }
 
                     if (e.type == kInteger) {
-                        //m += *(int *)e.ptr;
-
-                        int newVal = atoi(p->value().c_str());
-                        *(int *)e.ptr = newVal;
+                        *(int *)e.ptr = (int)newVal;
                     } else if (e.type == kUInt8) {
-                        //m += *(uint8_t *)e.ptr;
-
-                        *(uint8_t *)e.ptr = (uint8_t)atoi(p->value().c_str());
-                    } else if (e.type == kDouble || e.type == kDoubletime) {
-                        //m += *(double *)e.ptr;
-
-                        float newVal = atof(p->value().c_str());
+                        *(uint8_t *)e.ptr = (uint8_t)newVal;
+                    } else {
                         *(double *)e.ptr = newVal;
                     }
-                    //we don't need to set strings at the moment, needs testing also
-                    /*} else if (e.type == kCString) {
-                        m += String((char *)e.ptr);
-
-                        String val = p->value();
-                        static const char* newVal = new char[val.length() + 1]; //is this persistent or on stack?
-                        val.toCharArray(newVal, val.length() + 1);
-
-                        if (e.ptr) {
-                            delete[] ((char *)e.ptr);
-                        }
-                        e.ptr = (void *)newVal;
-                    }*/
-
-                    /*m += " to ";
-                    m += p->value();
-
-                    m += "<br/>";*/
+                    break;
                 }
             }
 
-            request->send(200, "text/html", "Parameters saved");
+            if (rejected.isEmpty()) {
+                request->send(200, "text/html", "Parameters saved");
+            } else {
+                debugPrintf("Rejected invalid parameter values: %s\n", rejected.c_str());
+                request->send(400, "text/html", "Invalid values, not saved: " + rejected);
+            }
 
             // Write to EEPROM
             if (writeToEeprom) {
@@ -454,7 +429,6 @@ void serverSetup() {
 
             if (doc.size() == 0) {
                 request->send(404, "application/json", F("{ \"code\": 404, \"message\": \"Parameter not found\"}"));
-                skipHeaterISR = false;
                 return;
             }
 
@@ -462,7 +436,6 @@ void serverSetup() {
             serializeJson(doc, paramsJson);
             request->send(200, "application/json", paramsJson);
         }
-        skipHeaterISR = false;
     });
 
     server.on("/parameterHelp", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -475,7 +448,7 @@ void serverSetup() {
         }
         const String& varValue = p->value();
 
-        skipHeaterISR = true;
+        HeaterIsrPause heaterIsrPause;
 
         for (editable_t e : editableVars) {
             if (e.templateString != varValue) {
@@ -490,8 +463,6 @@ void serverSetup() {
         String helpJson;
         serializeJson(doc, helpJson);
         request->send(200, "application/json", helpJson);
-
-        skipHeaterISR = false;
     });
 
     server.on("/temperatures", HTTP_GET, [](AsyncWebServerRequest *request) {
