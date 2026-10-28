@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Builds the Silvia-only Clever Coffee fork (ESP8266) and flashes it to the Silvia over OTA. Safe to re-run: it checks everything before it asks anything,
-# and nothing is flashed until you type "flash".
+# Builds the Silvia-only Clever Coffee fork (ESP8266) and flashes it to the Silvia over OTA.
+# Safe to re-run: it checks everything before it asks anything, and nothing is flashed until
+# you type "flash".
 #
 #   tools/flash/flash-silvia.sh            # build + flash
 #   tools/flash/flash-silvia.sh --build    # build only (placeholder secrets, no flashing)
@@ -14,8 +15,8 @@ REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 [[ -f "$REPO/tools/flash/local.env" ]] && source "$REPO/tools/flash/local.env"
 DEVICE_IP="${SILVIA_HOST:-silvia.local}"
 DEFAULT_SSID="${SILVIA_SSID:-}"
-# firmware version that will be built, e.g. "3.3.0 SILVIA-1"
-NEW_VERSION="3.3.0 $(sed -nE 's/^#define FW_BRANCH +"([^"]+)".*/\1/p' "$REPO/src/rancilio-pid.cpp")"
+# firmware version that will be built, e.g. "silvia-2"
+NEW_VERSION="$(sed -nE 's/^#define SILVIA_VERSION +"([^"]+)".*/\1/p' "$REPO/src/Version.h")"
 TEMPLATE="$REPO/tools/flash/userConfig.silvia.h"
 CONFIG="$REPO/src/userConfig.h"
 BIN="$REPO/.pio/build/nodemcuv2_ota/firmware.bin"
@@ -32,21 +33,22 @@ protocol() {
     printf '  %s\n' "${LOG[@]}"
 }
 
-write_config() {  # write_config SSID WIFI_PASS OTA_PASS
-    python3 -I - "$TEMPLATE" "$CONFIG" "$1" "$2" "$3" <<'EOF'
+write_config() {  # write_config SSID WIFI_PASS OTA_PASS WEB_PASS
+    python3 -I - "$TEMPLATE" "$CONFIG" "$@" <<'EOF'
 import sys
-template, target, ssid, wifi, ota = sys.argv[1:]
+template, target, ssid, wifi, ota, web = sys.argv[1:]
 def c(s):  # C string literal body
     return s.replace("\\", "\\\\").replace('"', '\\"')
 src = open(template).read()
-src = src.replace("@WIFI_SSID@", c(ssid)).replace("@WIFI_PASS@", c(wifi)).replace("@OTA_PASS@", c(ota))
+for name, value in (("WIFI_SSID", ssid), ("WIFI_PASS", wifi), ("OTA_PASS", ota), ("WEB_PASS", web)):
+    src = src.replace(f"@{name}@", c(value))
 open(target, "w").write(src)
 EOF
     chmod 600 "$CONFIG"
 }
 
 scrub_config() {  # never leave real secrets in the working tree
-    write_config "@WIFI_SSID@" "@WIFI_PASS@" "@OTA_PASS@"
+    write_config "@WIFI_SSID@" "@WIFI_PASS@" "@OTA_PASS@" "@WEB_PASS@"
 }
 
 build() {
@@ -56,12 +58,12 @@ build() {
          && pio run -e nodemcuv2_ota" >"$REPO/.pio-build.log" 2>&1
 }
 
-device_params() {
-    curl -s -m 5 "http://$DEVICE_IP/parameters"
+machine() {  # {"version": ..., "params": {...}} from either firmware generation
+    python3 -I "$REPO/tools/flash/machine.py" "$DEVICE_IP"
 }
 
-param() {  # param JSON NAME [field]
-    python3 -I -c 'import json,sys; d={p["name"]:p for p in json.loads(sys.argv[1])}; print(d[sys.argv[2]][sys.argv[3]])' "$1" "$2" "${3:-value}"
+field() {  # field JSON version | field JSON params KEY
+    python3 -I -c 'import json,sys; d=json.loads(sys.argv[1]); print(d["version"] if sys.argv[2]=="version" else d["params"][sys.argv[3]])' "$@"
 }
 
 # ------------------------------------------------------------------ checks
@@ -83,10 +85,10 @@ if [[ "${1:-}" == "--build" ]]; then
     exit 0
 fi
 
-PARAMS_BEFORE="$(device_params)" || true
+PARAMS_BEFORE="$(machine)" || true
 [[ -n "$PARAMS_BEFORE" ]] || die "Silvia unter http://$DEVICE_IP nicht erreichbar – Maschine an? Gleiches WLAN?"
-VERSION="$(param "$PARAMS_BEFORE" VERSION)"
-[[ "$VERSION" == "3.3.0 "* ]] || die "Unerwartete Firmware auf der Maschine: '$VERSION' (erwartet 3.3.0 ...)"
+VERSION="$(field "$PARAMS_BEFORE" version)"
+[[ "$VERSION" == "3.3.0 "* || "$VERSION" == silvia-* ]] || die "Unerwartete Firmware auf der Maschine: '$VERSION'"
 ok "Silvia erreichbar, läuft $VERSION"
 mkdir -p "$BACKUPS"
 STAMP="$(date +%Y%m%d-%H%M%S)"
@@ -111,10 +113,14 @@ if [[ "$NEW_OTA" == "$OLD_OTA" ]]; then
 else
     ok "Neues OTA-Passwort mit ${#NEW_OTA} Zeichen (gilt ab der neuen Firmware)"
 fi
+echo "  Web-Passwort (Benutzer 'silvia', für jede Änderung über Web/API): in 1Password z. B. 'Silvia Web'."
+read -r -s -p "  Web-Passwort: " WEB_PASS; echo
+[[ ${#WEB_PASS} -ge 8 ]] || die "Web-Passwort kürzer als 8 Zeichen – vermutlich nicht richtig eingefügt"
+ok "Web-Passwort mit ${#WEB_PASS} Zeichen"
 
 # ------------------------------------------------------------------ build
 say "3/5 Bauen (Docker, ca. 1 Minute)"
-write_config "$SSID" "$WIFI_PASS" "$NEW_OTA"
+write_config "$SSID" "$WIFI_PASS" "$NEW_OTA" "$WEB_PASS"
 trap scrub_config EXIT
 if ! build; then
     tail -30 "$REPO/.pio-build.log"
@@ -128,7 +134,7 @@ ok "Passwörter aus src/userConfig.h wieder entfernt"
 say "4/5 Flashen"
 cat <<EOF
   Ziel:      Silvia $DEVICE_IP ($VERSION)
-  Neu:       $(git describe --tags --always --dirty) ($(git branch --show-current))
+  Neu:       $NEW_VERSION, $(git describe --tags --always --dirty) ($(git branch --show-current))
   Bleibt:    alle Einstellungen (gleicher Speicheraufbau)
   Risiko:    gering – der ESP8266 übernimmt das Update erst, wenn es komplett angekommen ist.
              Bricht es ab, läuft die alte Firmware weiter.
@@ -155,21 +161,20 @@ say "5/5 Prüfen nach dem Neustart"
 PARAMS_AFTER=""
 for _ in $(seq 1 45); do
     sleep 2
-    PARAMS_AFTER="$(device_params)" || true
+    PARAMS_AFTER="$(machine)" || true
     [[ -n "$PARAMS_AFTER" ]] && break
 done
 [[ -n "$PARAMS_AFTER" ]] || die "Silvia nach 90 s nicht wieder im WLAN – WLAN-Daten falsch? Dann per USB neu flashen (siehe tools/flash/README.md)"
-VERSION_AFTER="$(param "$PARAMS_AFTER" VERSION)"
+echo "$PARAMS_AFTER" > "$BACKUPS/params-$STAMP-after.json"
+VERSION_AFTER="$(field "$PARAMS_AFTER" version)"
 [[ "$VERSION_AFTER" == "$NEW_VERSION" ]] \
     && ok "Silvia wieder erreichbar, läuft $VERSION_AFTER" \
     || warn "Silvia wieder erreichbar, läuft aber '$VERSION_AFTER' statt '$NEW_VERSION'"
-[[ "$(param "$PARAMS_AFTER" PID_BD_ON show)" == "True" ]] \
-    && ok "Brüherkennung jetzt aktiv (Brew-PID-Felder werden angezeigt)" \
-    || warn "Brew-PID-Felder werden noch nicht angezeigt – Brüherkennung nicht aktiv?"
-[[ "$(param "$PARAMS_AFTER" PID_ON)" == "1" ]] && ok "PID läuft" || warn "PID ist AUS – in der Weboberfläche einschalten"
-for p in BREW_SET_POINT PID_KP PID_TN PID_TV PID_BD_ON PID_BD_KP PID_BD_TIME PID_BD_BREWSENSITIVITY; do
-    b="$(param "$PARAMS_BEFORE" $p)"; a="$(param "$PARAMS_AFTER" $p)"
-    [[ "$a" == "$b" ]] && ok "$p = $a (unverändert)" || warn "$p: vorher $b, jetzt $a"
-done
+if python3 -I "$REPO/tools/flash/machine.py" diff "$BACKUPS/params-$STAMP.json" "$BACKUPS/params-$STAMP-after.json" | sed 's/^/    /'; then
+    ok "Alle Einstellungen unverändert"
+else
+    warn "Einstellungen geändert (Zeilen mit '!' oben)"
+fi
+[[ "$(field "$PARAMS_AFTER" params pid_on)" =~ ^(1|True|true)$ ]] && ok "Regelung an" || warn "Regelung ist AUS"
 [[ "$NEW_OTA" != "$OLD_OTA" ]] && warn "Ab jetzt gilt das neue OTA-Passwort aus 1Password"
 protocol

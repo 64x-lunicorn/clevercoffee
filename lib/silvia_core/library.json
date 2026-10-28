@@ -1,0 +1,7 @@
+{
+  "name": "silvia_core",
+  "version": "1.0.0",
+  "description": "Hardware-free control core of the Silvia-only Clever Coffee fork",
+  "frameworks": "*",
+  "platforms": "*"
+}
