@@ -34,6 +34,75 @@ void icons(const Screen &s) {
     }
 }
 
+/**
+ * the coffee cup, drawn from primitives; scale 1 is 13x16 px, scale 2 is 26x32 px
+ * @param fill   0..1 coffee in the cup
+ * @param steam  0..1 how much of the steam above it is shown (0 = none)
+ */
+void cup(int x, int y, int scale, float fill, float steam, uint8_t frame) {
+    const int bw = 10 * scale, bh = 9 * scale, by = y + 6 * scale;
+    u8g2.drawRFrame(x, by, bw, bh, 2);
+    u8g2.drawFrame(x + bw - 1, by + 2 * scale, 3 * scale, 4 * scale);  // handle
+    u8g2.drawHLine(x - scale, y + 16 * scale - 1, bw + 2 * scale);     // saucer
+    int h = (int)((bh - 2) * fill + 0.5f);
+    if (h > 0) u8g2.drawBox(x + 1, by + bh - 1 - h, bw - 2, h);
+
+    // two wisps that wave sideways; the frame moves the wave upwards
+    static const int8_t wave[] = {0, 1, 0, -1};
+    int rows = (int)(5 * scale * steam + 0.5f);
+    for (int wisp = 0; wisp < 2; wisp++) {
+        int wx = x + (3 + 4 * wisp) * scale;
+        for (int r = 0; r < rows; r++) {
+            int row = 5 * scale - 1 - r;  // from the cup upwards
+            u8g2.drawPixel(wx + wave[(row / scale + frame + 2 * wisp) % 4] * scale, y + row);
+        }
+    }
+}
+
+// the small cup in the bottom-right corner of the normal and shot screens
+void smallCup(const Screen &s) {
+    const int x = 113, y = 48;
+    switch (s.cup) {
+        case Cup::Empty: cup(x, y, 1, 0, 0, s.frame); break;
+        case Cup::Heating: cup(x, y, 1, 0, s.cupFill, s.frame); break;
+        case Cup::Ready: cup(x, y, 1, 1, 1, s.frame); break;
+        case Cup::Filling: cup(x, y, 1, s.cupFill, 1, s.frame); break;
+        default: break;
+    }
+}
+
+void drawStandby(const Screen &s) {
+    cup(s.cupX + 3, s.cupY, 2, 1, 1, s.frame);
+    if (isnan(s.temperature)) return;
+    char text[12];
+    snprintf(text, sizeof text, "%.0f °C", s.temperature);
+    u8g2.setFont(u8g2_font_6x10_tf);
+    int w = u8g2.getUTF8Width(text);
+    u8g2.drawUTF8(s.cupX + DisplayModel::kStandbyCupW / 2 - w / 2,
+                  s.cupY + DisplayModel::kStandbyCupH + DisplayModel::kStandbyTextH - 1, text);
+}
+
+/**
+ * move the finished frame buffer by dx/dy pixels (pixel shift against burn-in); the SSD1306
+ * buffer is 8 pages of 128 columns, one byte per column holds 8 rows
+ */
+void shiftBuffer(int dx, int dy) {
+    if (dx == 0 && dy == 0) return;
+    uint8_t *buf = u8g2.getBufferPtr();
+    uint64_t cols[128];
+    for (int x = 0; x < 128; x++) {
+        uint64_t c = 0;
+        for (int p = 0; p < 8; p++) c |= (uint64_t)buf[p * 128 + x] << (8 * p);
+        cols[x] = c;
+    }
+    for (int x = 0; x < 128; x++) {
+        int from = x - dx;
+        uint64_t c = from >= 0 && from < 128 ? cols[from] : 0;
+        c = dy >= 0 ? c << dy : c >> -dy;
+        for (int p = 0; p < 8; p++) buf[p * 128 + x] = (uint8_t)(c >> (8 * p));
+    }
+}
+
 void drawError(const Screen &s, uint32_t nowMs) {
     bool blink = (nowMs / 500) % 2;
     u8g2.drawFrame(0, 0, 128, 64);
@@ -77,6 +146,10 @@ void drawShot(const Screen &s, uint32_t nowMs) {
 
     u8g2.setDrawColor(1);
     if (!inverse) icons(s);
+    // the cup inverts with the screen: drawn in XOR it stays visible on the highlighted timer
+    u8g2.setDrawColor(2);
+    smallCup(s);
+    u8g2.setDrawColor(1);
 }
 
 void drawNormal(const Screen &s) {
@@ -99,7 +172,11 @@ void drawNormal(const Screen &s) {
         snprintf(text, sizeof text, "Soll %.1f", s.setpoint);
         centered(text, 63);
     }
+    smallCup(s);
 }
+
+bool panelOn = true;
+bool panelDim = false;
 
 }  // namespace
 
@@ -119,6 +196,16 @@ void bootMessage(const char *line1, const char *line2) {
 }
 
 void draw(const Screen &s, uint32_t nowMs) {
+    if (s.displayOn != panelOn) {
+        u8g2.setPowerSave(s.displayOn ? 0 : 1);
+        panelOn = s.displayOn;
+    }
+    if (!panelOn) return;
+    if (s.dim != panelDim) {
+        u8g2.setContrast(s.dim ? 8 : 255);
+        panelDim = s.dim;
+    }
+
     u8g2.clearBuffer();
     u8g2.setDrawColor(1);
     switch (s.layout) {
@@ -128,9 +215,12 @@ void draw(const Screen &s, uint32_t nowMs) {
             u8g2.setFont(u8g2_font_helvB12_tf);
             centered("Start…", 36);
             icons(s);
+            smallCup(s);
             break;
         case Layout::Normal: drawNormal(s); break;
+        case Layout::Standby: drawStandby(s); break;
     }
+    shiftBuffer(s.shiftX, s.shiftY);
     u8g2.sendBuffer();
 }
 

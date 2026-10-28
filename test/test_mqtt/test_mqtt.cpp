@@ -70,7 +70,7 @@ void test_all_discovery_documents_are_well_formed_and_unique() {
             diagnostics++;
         }
     }
-    TEST_ASSERT_EQUAL(4, controls);  // brew/steam set point, steam, PID
+    TEST_ASSERT_EQUAL(5, controls);  // brew/steam set point, steam, PID, standby time
     TEST_ASSERT_EQUAL(6, diagnostics);
     std::string t;
     char buf[8];
@@ -92,7 +92,7 @@ void test_controls_point_at_validated_commands() {
         }
         if (topic == "homeassistant/sensor/silvia/state/config") {
             TEST_ASSERT_NOT_NULL(strstr(doc.c_str(),
-                "\"options\":[\"off\",\"booting\",\"heating\",\"ready\",\"shot\",\"recovering\",\"steam\",\"error\"]"));
+                "\"options\":[\"off\",\"booting\",\"heating\",\"ready\",\"shot\",\"recovering\",\"steam\",\"error\",\"standby\"]"));
         }
         if (topic == "homeassistant/event/silvia/shot/config") {
             TEST_ASSERT_NOT_NULL(strstr(doc.c_str(), "\"event_types\":[\"shot\"]"));
@@ -127,7 +127,7 @@ void test_state_settings_and_shot_payloads() {
     mqtt::writeSettings(settings, core.params());
     TEST_ASSERT_EQUAL_STRING(
         "{\"brew_setpoint\":96.0,\"steam_setpoint\":120.0,\"steam_on\":false,\"pid_on\":true,\"pid_kp\":62.0,"
-        "\"pid_tn\":52.0,\"pid_tv\":11.5,\"pid_i_max\":75,\"bd_pid_on\":false}",
+        "\"pid_tn\":52.0,\"pid_tv\":11.5,\"pid_i_max\":75,\"bd_pid_on\":false,\"standby_min\":60}",
         buf);
 
     ShotSummary shot = {3, 100000, 1793086098, 32.7f, 95.9f, 88.1f, NAN, NAN, false};

@@ -19,6 +19,7 @@ const char *stateName(State state) {
         case State::Recovering: return "recovering";
         case State::Steam: return "steam";
         case State::Error: return "error";
+        case State::Standby: return "standby";
     }
     return "error";
 }
@@ -33,6 +34,7 @@ const char *stateLabel(State state) {
         case State::Recovering: return "Nachschwingen";
         case State::Steam: return "Dampf";
         case State::Error: return "Fehler";
+        case State::Standby: return "Standby";
     }
     return "Fehler";
 }
@@ -61,6 +63,8 @@ void SilviaCore::begin(uint32_t nowMs) {
     pid.SetMode(MANUAL);
     pidAutomatic = false;
     pidOutput = 0;
+    standby = false;
+    lastActivityMs = nowMs;
 
     fillSnapshot(nowMs, 0);
 }
@@ -76,7 +80,7 @@ uint16_t SilviaCore::tick(const TickInput &in) {
                 detector.reset(t);
                 detectorSeeded = true;
             }
-            bool armed = values.flag(kPidOn) && mode == Mode::Normal && !gate.error() && !overTemp;
+            bool armed = values.flag(kPidOn) && mode == Mode::Normal && !gate.error() && !overTemp && !standby;
             shotChanged = detector.add(in.nowMs, t, (float)values.get(kBrewSetpoint),
                                        (float)values.get(kBdSensitivity), armed);
         }
@@ -86,6 +90,7 @@ uint16_t SilviaCore::tick(const TickInput &in) {
     updateMode();
     updateErrors(in.nowMs);
     updateShot(in.nowMs, in.unixTime, shotChanged);
+    updateStandby(in.nowMs);
     updateState(in.nowMs);
     uint16_t duty = control(in.nowMs);
     fillSnapshot(in.nowMs, duty);
@@ -139,6 +144,7 @@ void SilviaCore::updateShot(uint32_t nowMs, uint32_t unixTime, bool shotChanged)
         Event e = {};
         e.atMs = nowMs;
         if (detector.running()) {
+            lastActivityMs = nowMs;
             shotCount++;
             e.type = EventType::ShotStarted;
             e.shot.id = shotCount;
@@ -189,12 +195,20 @@ void SilviaCore::updateShot(uint32_t nowMs, uint32_t unixTime, bool shotChanged)
     }
 }
 
+void SilviaCore::updateStandby(uint32_t nowMs) {
+    // a running shot is activity; an error keeps its own screen but does not stop the clock
+    if (standby || detector.running()) return;
+    if (nowMs - lastActivityMs >= (uint32_t)values.get(kStandbyMin) * 60000u) standby = true;
+}
+
 void SilviaCore::updateState(uint32_t nowMs) {
     State next;
     float brewSp = (float)values.get(kBrewSetpoint);
 
     if (lastError != ErrorKind::None) {
         next = State::Error;
+    } else if (standby) {
+        next = State::Standby;
     } else if (!values.flag(kPidOn)) {
         next = State::Off;
     } else if (!gate.hasValue()) {
@@ -232,7 +246,7 @@ void SilviaCore::applyTunings(double kp, double tn, double tv) {
 }
 
 uint16_t SilviaCore::control(uint32_t nowMs) {
-    bool heat = values.flag(kPidOn) && gate.hasValue() && lastError == ErrorKind::None;
+    bool heat = values.flag(kPidOn) && gate.hasValue() && lastError == ErrorKind::None && !standby;
     brewPidActive = false;
     if (!heat) {
         if (pidAutomatic) {
@@ -324,7 +338,10 @@ size_t SilviaCore::setParams(const char *const *keys, const char *const *texts, 
         if (w == writeCount) writeCount++;
     }
 
-    if (rejected == 0) values.apply(writes, writeCount, store);
+    if (rejected == 0) {
+        values.apply(writes, writeCount, store);
+        if (writeCount > 0) lastActivityMs = snap.uptimeMs;  // stored in standby too, but no wake-up
+    }
     return rejected;
 }
 

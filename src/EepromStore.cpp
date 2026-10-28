@@ -83,6 +83,8 @@ bool slotInfo(StorageSlot slot, SlotInfo &info) {
         case kSlotBrewTempOffset: info = {offsetof(sto_data_t, brewTempOffset), sizeof(double)}; return true;
         case kSlotUseBdPid: info = {offsetof(sto_data_t, pidBdOn), sizeof(uint8_t)}; return true;
         case kSlotSteamSetpoint: info = {offsetof(sto_data_t, steamsetpoint), sizeof(double)}; return true;
+        // unused by 3.3.0: 0xFF reads as empty, any other leftover is out of range and keeps the default
+        case kSlotStandbyMin: info = {offsetof(sto_data_t, freeToUse6), sizeof(uint8_t)}; return true;
         default: return false;
     }
 }

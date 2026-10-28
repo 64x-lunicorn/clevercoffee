@@ -113,8 +113,8 @@ void test_chunked_document_is_identical_for_any_chunk_size() {
     TEST_ASSERT_EQUAL('{', big.front());
     TEST_ASSERT_EQUAL('}', big.back());
     TEST_ASSERT_EQUAL(countOf(big, '['), countOf(big, ']'));
-    // 2 header fields, the states legend of 8, 4 arrays of 900 values
-    TEST_ASSERT_EQUAL(2 + 7 + 4 + 4 * 899, countOf(big, ','));
+    // 2 header fields, the states legend of 9, 4 arrays of 900 values
+    TEST_ASSERT_EQUAL(2 + 8 + 4 + 4 * 899, countOf(big, ','));
     TEST_ASSERT_TRUE(big.size() < 16000);
 }
 
@@ -128,7 +128,7 @@ void test_small_document_exactly() {
     // one sample per second: 1.2 s of ticks give 2 samples
     TEST_ASSERT_EQUAL_STRING(
         "{\"interval_s\":1,\"end_uptime_s\":2,\"states\":[\"off\",\"booting\",\"heating\",\"ready\",\"shot\","
-        "\"recovering\",\"steam\",\"error\"],\"temperature\":[null,95.3],\"setpoint\":[96.0,96.0],"
+        "\"recovering\",\"steam\",\"error\",\"standby\"],\"temperature\":[null,95.3],\"setpoint\":[96.0,96.0],"
         "\"heater\":[0.0,6.4],\"state\":[1,2]}",
         text.c_str());
 }

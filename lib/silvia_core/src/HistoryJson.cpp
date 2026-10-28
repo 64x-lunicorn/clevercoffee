@@ -38,7 +38,7 @@ bool HistoryJson::render() {
             snprintf(text, sizeof text, "%lu", (unsigned long)(endMs / 1000));
             out.raw(text);
             out.raw(",\"states\":[");
-            for (int s = (int)State::Off; s <= (int)State::Error; s++) {
+            for (int s = (int)State::Off; s <= (int)kLastState; s++) {
                 if (s) out.raw(",");
                 out.raw("\"");
                 out.raw(stateName((State)s));

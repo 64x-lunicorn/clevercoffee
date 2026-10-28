@@ -21,7 +21,7 @@ The whole "what is the machine doing" in one document.
   "brew_setpoint": 96.0,
   "steam_setpoint": 120.0,
   "heater": 27.5,               // heater power in %
-  "state": "ready",             // off | booting | heating | ready | shot | recovering | steam | error
+  "state": "ready",             // off | booting | heating | ready | shot | recovering | steam | error | standby
   "state_label": "Bereit",      // German, as on the display
   "ready": true,
   "error": "none",              // none | sensor | overtemp
@@ -59,6 +59,7 @@ The whole "what is the machine doing" in one document.
 | `ready` | within ±0.5 °C of the set point (stays ready within ±1 °C) |
 | `shot` | a shot is running (detected from the temperature drop) |
 | `recovering` | above the set point: overshoot after a shot or heat-up, or cooling down after steam |
+| `standby` | no shot, steam or change for `standby_min` minutes: heater off until the power is cut and restored |
 | `steam` | steam mode |
 | `error` | heater off: `sensor` (implausible or no readings for 4–5 s) or `overtemp` (above 120 °C, 145 °C in steam mode; clears below brew set point + 5 °C) |
 
@@ -94,6 +95,7 @@ Array with one entry per setting:
 | `bd_kp`, `bd_tn`, `bd_tv` | number | 0–200, 0–999, 0–999 | 50, 0, 20 | expert |
 | `bd_time` | number | 1–180 s | 30 | expert, brew PID duration after detection |
 | `bd_sensitivity` | number | 0–999 | 120 | expert, 0 = detection off |
+| `standby_min` | number | 30–240 | 60 | whole minutes; standby after this long without a shot, steam or change. Cannot be switched off |
 
 Booleans accept `true/false`, `1/0`, `"ON"/"OFF"`. The 3.3.0 names (`BREW_SET_POINT`, …) are
 accepted as keys too. `temperature`, `version`, `state` and the other values of `/api/state`
@@ -134,7 +136,7 @@ The last 15 minutes at 1 s resolution, oldest first, as columns (about 14 KB, se
 {
   "interval_s": 1,
   "end_uptime_s": 1900,                 // uptime of the newest sample
-  "states": ["off", "booting", "heating", "ready", "shot", "recovering", "steam", "error"],
+  "states": ["off", "booting", "heating", "ready", "shot", "recovering", "steam", "error", "standby"],
   "temperature": [95.9, 96.0, …],       // °C, null while unknown
   "setpoint": [96.0, 96.0, …],
   "heater": [24.8, 26.0, …],            // %

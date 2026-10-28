@@ -33,7 +33,7 @@ the MQTT password. An empty broker address builds the firmware without MQTT.
 | `silvia/state` | measurements and state, JSON, every second while heating, during a shot, recovery or steam, every 10 s when idle, at once on a state change |
 | `silvia/settings` | set points, switches and PID parameters, JSON, retained, on every change |
 | `silvia/event/shot` | one message per finished shot: `{"event_type":"shot","id","duration_s","start_temp","min_temp","start_unix"}` |
-| `silvia/set/<key>` | commands: `brew_setpoint`, `steam_setpoint` (numbers), `steam_on`, `pid_on` (`ON`/`OFF`) |
+| `silvia/set/<key>` | commands: `brew_setpoint`, `steam_setpoint`, `standby_min` (numbers), `steam_on`, `pid_on` (`ON`/`OFF`) |
 | `homeassistant/status` | the machine re-publishes discovery when HA announces `online` |
 
 Commands are validated against the parameter table like every web/API write; invalid or
@@ -46,13 +46,13 @@ detection) can only be changed in the web UI with the web password.
 |---|---|
 | `sensor.silvia_temperature` | °C |
 | `sensor.silvia_heater` | heater power % |
-| `sensor.silvia_state` | off / booting / heating / ready / shot / recovering / steam / error |
+| `sensor.silvia_state` | off / booting / heating / ready / shot / recovering / steam / error / standby |
 | `binary_sensor.silvia_ready` | |
 | `sensor.silvia_error` | none / sensor / overtemp |
 | `sensor.silvia_last_shot` | duration of the last shot in s |
 | `sensor.silvia_shot_count` | shots since the machine was switched on |
 | `event.silvia_shot` | fires once per shot, attributes as in `silvia/event/shot` |
-| `number.silvia_brew_setpoint`, `number.silvia_steam_setpoint` | controls |
+| `number.silvia_brew_setpoint`, `number.silvia_steam_setpoint`, `number.silvia_standby_min` | controls |
 | `switch.silvia_steam`, `switch.silvia_pid` | controls |
 | `sensor.silvia_wifi_signal`, `sensor.silvia_firmware`, `sensor.silvia_pid_*` | diagnostic, disabled by default |
 
