@@ -2,6 +2,7 @@
 
 #include <ArduinoOTA.h>
 #include <ESP8266WiFi.h>
+#include <LittleFS.h>
 #include <time.h>
 
 #include "Backoff.h"
@@ -35,7 +36,10 @@ void begin(const char *hostname, const char *wifiSsid, const char *wifiPassword,
 
     ArduinoOTA.setHostname(hostname);
     ArduinoOTA.setPassword(otaPassword);
-    ArduinoOTA.onStart([]() { callbacks.otaStart(); });
+    ArduinoOTA.onStart([]() {
+        callbacks.otaStart();
+        if (ArduinoOTA.getCommand() == U_FS) LittleFS.end();  // the web UI image is replaced
+    });
     ArduinoOTA.onEnd([]() { callbacks.otaEnd(); });
     ArduinoOTA.onError([](ota_error_t) { callbacks.otaEnd(); });
 }

@@ -20,6 +20,7 @@ NEW_VERSION="$(sed -nE 's/^#define SILVIA_VERSION +"([^"]+)".*/\1/p' "$REPO/src/
 TEMPLATE="$REPO/tools/flash/userConfig.silvia.h"
 CONFIG="$REPO/src/userConfig.h"
 BIN="$REPO/.pio/build/nodemcuv2_ota/firmware.bin"
+FS_BIN="$REPO/.pio/build/nodemcuv2_ota/littlefs.bin"   # web UI (data/www, built by web/build.py)
 BACKUPS="$REPO/tools/flash/backups"
 LOG=()
 
@@ -51,11 +52,20 @@ scrub_config() {  # never leave real secrets in the working tree
     write_config "@WIFI_SSID@" "@WIFI_PASS@" "@OTA_PASS@" "@WEB_PASS@"
 }
 
+build_web() {
+    python3 -I "$REPO/web/build.py" >/dev/null
+}
+
+cleanup_bins() {
+    cleanup_bins "$FS_BIN"
+}
+
 build() {
+    build_web || return 1
     docker run --rm -v "$REPO":/fw -v silvia-pio:/root/.platformio -w /fw python:3.12-slim sh -c \
         "apt-get update -qq >/dev/null && apt-get install -y -qq git >/dev/null \
          && pip install -q --root-user-action=ignore platformio==6.1.18 \
-         && pio run -e nodemcuv2_ota" >"$REPO/.pio-build.log" 2>&1
+         && pio run -e nodemcuv2_ota && pio run -e nodemcuv2_ota -t buildfs" >"$REPO/.pio-build.log" 2>&1
 }
 
 machine() {  # {"version": ..., "params": {...}} from either firmware generation
@@ -80,7 +90,7 @@ if [[ "${1:-}" == "--build" ]]; then
     scrub_config
     build || { tail -30 "$REPO/.pio-build.log"; die "Build fehlgeschlagen (.pio-build.log)"; }
     ok "Build ok: $(grep -E '^(RAM|Flash):' "$REPO/.pio-build.log" | tr -s ' ' | paste -sd ' ' -)"
-    rm -f "$BIN" "${BIN%.bin}.elf"
+    cleanup_bins
     protocol
     exit 0
 fi
@@ -143,18 +153,29 @@ cat <<EOF
 EOF
 read -r -p "  Zum Flashen 'flash' tippen: " CONFIRM
 if [[ "$CONFIRM" != "flash" ]]; then
-    rm -f "$BIN" "${BIN%.bin}.elf"
+    cleanup_bins
     warn "Abgebrochen, nichts geflasht"
     protocol
     exit 0
 fi
 if python3 -I "$REPO/tools/flash/espota.py" -i "$DEVICE_IP" -p 8266 -a "$OLD_OTA" -f "$BIN" -r; then
-    ok "Upload abgeschlossen"
+    ok "Firmware hochgeladen"
 else
-    rm -f "$BIN" "${BIN%.bin}.elf"
+    cleanup_bins
     die "Upload fehlgeschlagen – alte Firmware läuft weiter. Häufigste Ursache: falsches aktuelles OTA-Passwort oder macOS-Firewall"
 fi
-rm -f "$BIN" "${BIN%.bin}.elf"
+
+# the web UI goes into LittleFS; the new firmware unmounts it during the update
+for _ in $(seq 1 45); do
+    sleep 2
+    machine >/dev/null 2>&1 && break
+done
+if python3 -I "$REPO/tools/flash/espota.py" -i "$DEVICE_IP" -p 8266 -a "$NEW_OTA" -s -f "$FS_BIN" -r; then
+    ok "Web-Oberfläche hochgeladen"
+else
+    warn "Web-Oberfläche nicht hochgeladen – die Maschine zeigt die einfache Statusseite. Skript erneut starten."
+fi
+cleanup_bins
 
 # ------------------------------------------------------------------ verify
 say "5/5 Prüfen nach dem Neustart"

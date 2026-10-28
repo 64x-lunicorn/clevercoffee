@@ -126,6 +126,60 @@ curl -u silvia -H 'Content-Type: application/json' -d '{"steam": true}' http://s
 
 Keys `steam` and `pid` (booleans). Answers with `/api/state` (200) or field errors (400).
 
+## `GET /api/history`
+
+The last 15 minutes at 1 s resolution, oldest first, as columns (about 14 KB, sent chunked):
+
+```jsonc
+{
+  "interval_s": 1,
+  "end_uptime_s": 1900,                 // uptime of the newest sample
+  "states": ["off", "booting", "heating", "ready", "shot", "recovering", "steam", "error"],
+  "temperature": [95.9, 96.0, …],       // °C, null while unknown
+  "setpoint": [96.0, 96.0, …],
+  "heater": [24.8, 26.0, …],            // %
+  "state": [3, 3, …]                    // index into "states"
+}
+```
+
+## `GET /api/shots`
+
+The last 10 shot summaries (newest first, fields as `last_shot` above) and the 1 s curve of the
+most recent shot from its back-dated start, up to 120 s:
+
+```jsonc
+{
+  "shots": [{"id": 3, "duration_s": 32.7, …}, …],
+  "last_curve": {"shot_id": 3, "start_uptime_s": 1834.2, "interval_s": 1,
+                 "temperature": [95.9, 95.6, …], "heater": [24.0, 31.2, …]}   // null before the first shot
+}
+```
+
+Shots are kept in RAM only: they are gone after a power cycle (long-term history lives in
+Home Assistant).
+
+## `GET /api/events`
+
+Server-sent events (`EventSource`):
+
+| event | data | when |
+|---|---|---|
+| `state` | the `/api/state` document | every second while a client listens |
+| `shot_started` | `{"event", "uptime_s", "shot": {…}}` | a shot was detected (start already back-dated) |
+| `shot_finished` | same | duration, start and minimum known |
+| `shot_complete` | same | peak and time until ready final (5 min later) |
+| `error_raised`, `error_cleared` | `{"event", "uptime_s", "error"}` | heater switched off / allowed again |
+| `ready_reached` | `{"event", "uptime_s", "first_since_boot"}` | entered `ready`; `first_since_boot` marks the end of the heat-up |
+
+## Web UI
+
+`GET /` serves the web UI from LittleFS (`/www/index.html.gz`, built by `web/build.py` from
+`web/`). It only talks to the endpoints above. Without the filesystem image a small built-in
+status page is served instead.
+
+For UI work without the machine: `python3 web/build.py && python3 web/mock_server.py` serves the
+same API from the recorded shots on <http://localhost:8080> (writes: `silvia` / `test`).
+
 ## Removed
 
 The 3.3.0 endpoints (`/parameters`, `/temperatures`, `/timeseries`, `/toggleSteam`,

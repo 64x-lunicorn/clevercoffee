@@ -5,7 +5,11 @@
 #include <ESP8266WiFi.h>
 #include <ESPAsyncTCP.h>
 #include <ESPAsyncWebServer.h>
+#include <LittleFS.h>
 
+#include <memory>
+
+#include "HistoryJson.h"
 #include "WebApi.h"
 
 #include "StatusPage.h"
@@ -17,7 +21,9 @@ namespace webapi {
 namespace {
 
 AsyncWebServer server(80);
+AsyncEventSource events("/api/events");
 Context ctx;
+uint32_t lastStateEventMs = 0;
 
 const size_t kMaxFields = 20;
 
@@ -29,25 +35,33 @@ bool authorized(AsyncWebServerRequest *request) {
 
 void sendJson(AsyncWebServerRequest *request, int code, size_t capacity,
               void (*write)(JsonOut &out)) {
-    char *buf = (char *)malloc(capacity);
+    // the buffer lives until the response is sent: no second copy in a String
+    std::shared_ptr<char> buf((char *)malloc(capacity), free);
     if (!buf) {
         request->send(503, "application/json", "{\"error\":\"out_of_memory\"}");
         return;
     }
-    JsonOut out(buf, capacity);
+    JsonOut out(buf.get(), capacity);
     write(out);
     if (out.overflow()) {
         request->send(500, "application/json", "{\"error\":\"overflow\"}");
-    } else {
-        AsyncWebServerResponse *response = request->beginResponse(code, "application/json", buf);
-        response->addHeader("Cache-Control", "no-store");
-        request->send(response);
+        return;
     }
-    free(buf);
+    size_t len = out.length();
+    AsyncWebServerResponse *response = request->beginResponse(
+        "application/json", len, [buf, len](uint8_t *dest, size_t max, size_t index) -> size_t {
+            size_t n = len - index < max ? len - index : max;
+            memcpy(dest, buf.get() + index, n);
+            return n;
+        });
+    response->setCode(code);
+    response->addHeader("Cache-Control", "no-store");
+    request->send(response);
 }
 
 void writeStateDoc(JsonOut &out) { writeState(out, ctx.core->snapshot(), ctx.device()); }
 void writeParamsDoc(JsonOut &out) { writeParameters(out, ctx.core->params()); }
+void writeShotsDoc(JsonOut &out) { writeShots(out, *ctx.history); }
 
 /** JSON body values as text, so they go through the same parser as every other input */
 struct TextFields {
@@ -140,6 +154,20 @@ void begin(const Context &context) {
     server.on("/api/parameters", HTTP_GET, [](AsyncWebServerRequest *request) {
         sendJson(request, 200, 6144, writeParamsDoc);
     });
+    server.on("/api/shots", HTTP_GET, [](AsyncWebServerRequest *request) {
+        sendJson(request, 200, 5120, writeShotsDoc);
+    });
+    server.on("/api/history", HTTP_GET, [](AsyncWebServerRequest *request) {
+        // ~14 KB: generated piece by piece while the response is sent
+        std::shared_ptr<HistoryJson> json = std::make_shared<HistoryJson>(*ctx.history);
+        AsyncWebServerResponse *response = request->beginChunkedResponse(
+            "application/json", [json](uint8_t *buf, size_t max, size_t) { return json->read((char *)buf, max); });
+        response->addHeader("Cache-Control", "no-store");
+        request->send(response);
+    });
+
+    events.onConnect([](AsyncEventSourceClient *client) { client->send("hello", "hello", millis(), 3000); });
+    server.addHandler(&events);
 
     auto *params = new AsyncCallbackJsonWebHandler("/api/parameters", postParameters, 1024);
     params->setMethod(HTTP_POST);
@@ -151,10 +179,16 @@ void begin(const Context &context) {
     command->setMaxContentLength(512);
     server.addHandler(command);
 
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-        AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html; charset=utf-8", statusPage);
-        request->send(response);
-    });
+    LittleFS.begin();
+    if (LittleFS.exists("/www/index.html.gz")) {
+        // serveStatic picks the .gz and sets Content-Encoding itself
+        server.serveStatic("/", LittleFS, "/www/").setDefaultFile("index.html").setCacheControl("no-cache");
+    } else {
+        // filesystem not flashed yet: the small built-in page still works
+        server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+            request->send(request->beginResponse_P(200, "text/html; charset=utf-8", statusPage));
+        });
+    }
 
     server.onNotFound([](AsyncWebServerRequest *request) {
         if (request->method() == HTTP_POST && (request->url() == "/api/parameters" || request->url() == "/api/command")) {
@@ -165,6 +199,24 @@ void begin(const Context &context) {
     });
 
     server.begin();
+}
+
+void loop(uint32_t nowMs) {
+    if (nowMs - lastStateEventMs < 1000) return;
+    lastStateEventMs = nowMs;
+    if (events.count() == 0) return;
+    static char buf[1024];
+    JsonOut out(buf, sizeof buf);
+    writeStateDoc(out);
+    if (!out.overflow()) events.send(buf, "state", nowMs);
+}
+
+void publish(const Event &event) {
+    if (events.count() == 0) return;
+    static char buf[512];
+    JsonOut out(buf, sizeof buf);
+    writeEvent(out, event);
+    if (!out.overflow()) events.send(buf, eventName(event.type), millis());
 }
 
 }  // namespace webapi

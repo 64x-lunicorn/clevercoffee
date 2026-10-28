@@ -35,7 +35,9 @@ The fork is delivered in steps, each flashed and checked with a test coffee:
    back-dated start and end, one parameter table. WiFi reconnects forever in the background,
    the heater decision is applied before the display refresh, new display with shot timer and
    plain-language errors, JSON API ([docs/api.md](docs/api.md)) with basic auth for writes.
-3. On-device history and shot log, JSON API, offline web UI.
+3. **Data and web UI** – 15 min history at 1 s, the last 10 shots and the last shot's curve on
+   the device, `/api/history`, `/api/shots` and a live event stream; an offline, German,
+   mobile-first web UI (Preact, one 14 KB gzipped file in LittleFS, light and dark mode).
 4. Home Assistant via MQTT discovery.
 
 The full specification is [issue #1](https://github.com/64x-lunicorn/clevercoffee/issues/1).
@@ -68,5 +70,5 @@ The full specification is [issue #1](https://github.com/64x-lunicorn/clevercoffe
 | `test/` | native Unity tests (`pio test -e native`) |
 | `tools/flash/` | config template, flash script, vendored `espota.py` |
 | `tools/silvia-sim/` | recorded shots (`data/*.jsonl`: time, temperature, heater power) and the test-vector generator |
-| `data/` | web UI files for LittleFS |
+| `web/` | web UI source, build script (`web/build.py` → `data/www/index.html.gz`), mock machine for UI work |
 | `hardware/`, `img/` | upstream PCB and wiring documentation |

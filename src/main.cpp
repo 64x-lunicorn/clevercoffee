@@ -16,6 +16,7 @@
 #include "DisplayModel.h"
 #include "DisplayRenderer.h"
 #include "EepromStore.h"
+#include "History.h"
 #include "ISR.h"
 #include "Network.h"
 #include "SilviaCore.h"
@@ -34,6 +35,7 @@ ZACwire tsic(PINTEMPSENSOR, 306);
 EepromStore store;
 silvia::SilviaCore core(&store);
 silvia::DisplayModel displayModel;
+silvia::History history;
 
 uint32_t lastTickMs = 0;
 uint32_t lastSensorMs = 0;
@@ -92,7 +94,7 @@ void setup() {
                         display::bootMessage("Update", "Heizung aus");
                     },
                     []() { enableTimer1(); }});
-    webapi::begin({&core, WEB_USER, WEB_PASS, deviceInfo});
+    webapi::begin({&core, &history, WEB_USER, WEB_PASS, deviceInfo});
 
     initTimer1();
     enableTimer1();
@@ -115,11 +117,17 @@ void loop() {
         heaterDuty = core.tick(in);
         if (heaterDuty == 0 && !skipHeaterISR) digitalWrite(PINHEATER, LOW);
 
+        history.update(core.snapshot());
         silvia::Event e;
-        while (core.popEvent(e)) logEvent(e);
+        while (core.popEvent(e)) {
+            logEvent(e);
+            history.onEvent(e);
+            webapi::publish(e);
+        }
     }
 
     network::loop(now);
+    webapi::loop(now);
 
     const silvia::Snapshot &s = core.snapshot();
     uint32_t displayInterval = s.state == silvia::State::Shot ? 200 : 500;
