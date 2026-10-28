@@ -13,6 +13,23 @@ extern unsigned int isrCounter;
 extern unsigned int windowSize;
 extern bool skipHeaterISR;
 
+/**
+ * @brief pauses heater switching in the ISR for the current scope (flash access in web handlers)
+ *
+ * Restores the previous state on every return path. Setting skipHeaterISR by hand left it
+ * true after a successfully served HTML page, freezing the heater pin until the next request.
+ */
+class HeaterIsrPause {
+  public:
+    HeaterIsrPause() : previous(skipHeaterISR) { skipHeaterISR = true; }
+    ~HeaterIsrPause() { skipHeaterISR = previous; }
+    HeaterIsrPause(const HeaterIsrPause &) = delete;
+    HeaterIsrPause &operator=(const HeaterIsrPause &) = delete;
+
+  private:
+    bool previous;
+};
+
 #if defined(ESP32)
 extern hw_timer_t *timer;
 #endif

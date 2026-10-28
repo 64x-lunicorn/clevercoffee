@@ -40,6 +40,7 @@
 #include "ISR.h"
 #include "debugSerial.h"
 #include "rancilio-pid.h"
+#include "TempRateFilter.h"
 
 #if defined(ESP32)
     #include <os.h>
@@ -231,7 +232,7 @@ SysPara<double> sysParaPidTnReg(&aggTn, PID_TN_REGULAR_MIN, PID_TN_REGULAR_MAX, 
 SysPara<double> sysParaPidTvReg(&aggTv, PID_TV_REGULAR_MIN, PID_TV_REGULAR_MAX, STO_ITEM_PID_TV_REGULAR);
 SysPara<double> sysParaPidIMaxReg(&aggIMax, PID_I_MAX_REGULAR_MIN, PID_I_MAX_REGULAR_MAX, STO_ITEM_PID_I_MAX_REGULAR);
 SysPara<double> sysParaPidKpBd(&aggbKp, PID_KP_BD_MIN, PID_KP_BD_MAX, STO_ITEM_PID_KP_BD);
-SysPara<double> sysParaPidTnBd(&aggbTn, PID_TN_BD_MIN, PID_KP_BD_MAX, STO_ITEM_PID_TN_BD);
+SysPara<double> sysParaPidTnBd(&aggbTn, PID_TN_BD_MIN, PID_TN_BD_MAX, STO_ITEM_PID_TN_BD);
 SysPara<double> sysParaPidTvBd(&aggbTv, PID_TV_BD_MIN, PID_TV_BD_MAX, STO_ITEM_PID_TV_BD);
 SysPara<double> sysParaBrewSetPoint(&brewSetPoint, BREW_SETPOINT_MIN, BREW_SETPOINT_MAX, STO_ITEM_BREW_SETPOINT);
 SysPara<double> sysParaTempOffset(&brewTempOffset, BREW_TEMP_OFFSET_MIN, BREW_TEMP_OFFSET_MAX, STO_ITEM_BREW_TEMP_OFFSET);
@@ -509,51 +510,17 @@ void testEmergencyStop() {
  * @brief FIR moving average filter for software brew detection
  */
 void calculateTemperatureMovingAverage() {
-    const int numValues = 15;                      // moving average filter length
-    static double tempValues[numValues];           // array of temp values
-    static unsigned long timeValues[numValues];    // array of time values
-    static double tempChangeRates[numValues];
-    static int valueIndex = 1;                     // the index of the current value
+    static TempRateFilter tempRateFilter;
 
     if (brewDetectionMode == 1 && !movingAverageInitialized) {
-        for (int index = 0; index < numValues; index++) {
-            tempValues[index] = temperature;
-            timeValues[index] = 0;
-            tempChangeRates[index] = 0;
-        }
-
+        tempRateFilter.reset(temperature);
         movingAverageInitialized = true;
     }
 
-    timeValues[valueIndex] = millis();
-    tempValues[valueIndex] = temperature;
-
-    double tempChangeRate = 0;                     // local change rate of temperature
-    if (valueIndex == numValues - 1) {
-        tempChangeRate = (tempValues[numValues - 1] - tempValues[0]) /
-                        (timeValues[numValues - 1] - timeValues[0]) * 10000;
-    } else {
-        tempChangeRate = (tempValues[valueIndex] - tempValues[valueIndex + 1]) /
-                        (timeValues[valueIndex] - timeValues[valueIndex + 1]) * 10000;
-    }
-    tempChangeRates[valueIndex] = tempChangeRate;
-
-    double totalTempChangeRateSum = 0;
-    for (int i = 0; i < numValues; i++) {
-        totalTempChangeRateSum += tempChangeRates[i];
-    }
-
-    tempRateAverage = totalTempChangeRateSum / numValues * 100;
+    tempRateAverage = tempRateFilter.add(millis(), temperature);
 
     if (tempRateAverage < tempChangeRateAverageMin) {
         tempChangeRateAverageMin = tempRateAverage;
-    }
-
-    if (valueIndex >= numValues - 1) {
-        // ...wrap around to the beginning:
-        valueIndex = 0;
-    } else {
-        valueIndex++;
     }
 }
 
@@ -885,7 +852,7 @@ void brewDetection() {
     // Activate brew detection
     if (brewDetectionMode == 1) {  // SW BD
         // BD PID only +/- 4 °C, no detection if HW was active
-        if (tempRateAverage <= -brewSensitivity && isBrewDetected == 0 && (fabs(temperature - brewSetPoint) < 5)) {
+        if (isBrewDetected == 0 && isSoftwareBrewStart(tempRateAverage, temperature, brewSetPoint, brewSensitivity)) {
             debugPrintln("SW Brew detected");
             timeBrewDetection = millis();
             isBrewDetected = 1;

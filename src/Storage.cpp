@@ -660,14 +660,10 @@ int storageCommit(void) {
 
     //While Flash memory erase/write operations no other code must be executed from
     //Flash
-    skipHeaterISR = true;
+    HeaterIsrPause heaterIsrPause;
 
     // really write data to storage...
-    int returnCode = EEPROM.commit() ? 0 : -1;
-
-    skipHeaterISR = false;
-
-    return returnCode;
+    return EEPROM.commit() ? 0 : -1;
 }
 
 /**
