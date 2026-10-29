@@ -5,4 +5,4 @@
  */
 #pragma once
 
-#define SILVIA_VERSION "silvia-5"
+#define SILVIA_VERSION "silvia-6"

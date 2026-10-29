@@ -5,6 +5,7 @@
 
 #include "DisplayRenderer.h"
 
+#include "Version.h"
 #include "hardware.h"
 #include "icon.h"
 
@@ -72,7 +73,7 @@ void smallCup(const Screen &s) {
 }
 
 void drawStandby(const Screen &s) {
-    cup(s.cupX + 3, s.cupY, 2, 1, 1, s.frame);
+    u8g2.drawXBMP(s.cupX, s.cupY, cat_width, cat_height, cat_bits);
     if (isnan(s.temperature)) return;
     char text[12];
     snprintf(text, sizeof text, "%.0f °C", s.temperature);
@@ -101,6 +102,30 @@ void shiftBuffer(int dx, int dy) {
         c = dy >= 0 ? c << dy : c >> -dy;
         for (int p = 0; p < 8; p++) buf[p * 128 + x] = (uint8_t)(c >> (8 * p));
     }
+}
+
+// one line in the column right of the large cat, centered; long lines get the smaller font
+void rightColumn(const char *text, int y) {
+    const int left = catLarge_width, width = 128 - catLarge_width;
+    u8g2.setFont(u8g2_font_6x10_tf);
+    if (u8g2.getUTF8Width(text) > width) u8g2.setFont(u8g2_font_5x7_tf);
+    u8g2.drawUTF8(left + (width - u8g2.getUTF8Width(text)) / 2, y, text);
+}
+
+// start and update screen: the large cat on the left, a title and up to two lines on the right
+void startScreen(const char *title, const char *line1, const char *line2) {
+    u8g2.drawXBMP(0, (64 - catLarge_height) / 2, catLarge_width, catLarge_height, catLarge_bits);
+    u8g2.setFont(u8g2_font_helvB12_tf);
+    const int width = 128 - catLarge_width;
+    u8g2.drawUTF8(catLarge_width + (width - u8g2.getUTF8Width(title)) / 2, 22, title);
+    if (line1) rightColumn(line1, 38);
+    if (line2) rightColumn(line2, 52);
+}
+
+void drawSplash(const Screen &s) {
+    char text[12];
+    snprintf(text, sizeof text, "%.0f °C", s.temperature);
+    startScreen("Silvia", SILVIA_VERSION, isnan(s.temperature) ? nullptr : text);
 }
 
 void drawError(const Screen &s, uint32_t nowMs) {
@@ -188,10 +213,7 @@ void begin() {
 
 void bootMessage(const char *line1, const char *line2) {
     u8g2.clearBuffer();
-    u8g2.drawXBMP(44, 0, startLogoRancilio_width, startLogoRancilio_height, startLogoRancilio_bits);
-    u8g2.setFont(u8g2_font_6x10_tf);
-    centered(line1, 52);
-    centered(line2, 63);
+    startScreen(line1, line2, nullptr);
     u8g2.sendBuffer();
 }
 
@@ -219,6 +241,7 @@ void draw(const Screen &s, uint32_t nowMs) {
             break;
         case Layout::Normal: drawNormal(s); break;
         case Layout::Standby: drawStandby(s); break;
+        case Layout::Splash: drawSplash(s); break;
     }
     shiftBuffer(s.shiftX, s.shiftY);
     u8g2.sendBuffer();
