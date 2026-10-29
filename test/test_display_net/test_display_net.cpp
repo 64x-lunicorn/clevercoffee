@@ -15,6 +15,9 @@ void tearDown() {}
 
 namespace {
 
+// past the start screen
+const uint32_t T = DisplayModel::kSplashMs;
+
 Snapshot base(State state) {
     Snapshot s = {};
     s.state = state;
@@ -34,12 +37,12 @@ void test_timer_levels() {
 
 void test_normal_screen_shows_state_in_words() {
     DisplayModel m;
-    Screen screen = m.update(base(State::Heating), 0, true, false, false);
+    Screen screen = m.update(base(State::Heating), T, true, false, false);
     TEST_ASSERT_EQUAL(Layout::Normal, screen.layout);
     TEST_ASSERT_EQUAL_STRING("Aufheizen", screen.stateLabel);
-    TEST_ASSERT_EQUAL_STRING("Bereit", m.update(base(State::Ready), 0, true, false, false).stateLabel);
-    TEST_ASSERT_EQUAL_STRING("Nachschwingen", m.update(base(State::Recovering), 0, true, false, false).stateLabel);
-    TEST_ASSERT_EQUAL_STRING("Dampf", m.update(base(State::Steam), 0, true, false, false).stateLabel);
+    TEST_ASSERT_EQUAL_STRING("Bereit", m.update(base(State::Ready), T, true, false, false).stateLabel);
+    TEST_ASSERT_EQUAL_STRING("Nachschwingen", m.update(base(State::Recovering), T, true, false, false).stateLabel);
+    TEST_ASSERT_EQUAL_STRING("Dampf", m.update(base(State::Steam), T, true, false, false).stateLabel);
 }
 
 void test_shot_timer_and_ten_second_hold() {
@@ -79,34 +82,34 @@ void test_error_wins_over_shot_hold() {
 
 void test_network_loss_is_only_an_icon() {
     DisplayModel m;
-    Screen screen = m.update(base(State::Ready), 0, false, true, false);
+    Screen screen = m.update(base(State::Ready), T, false, true, false);
     TEST_ASSERT_EQUAL(Layout::Normal, screen.layout);
     TEST_ASSERT_TRUE(screen.wifiLost);
     TEST_ASSERT_FALSE(screen.mqttLost);  // follows from the WiFi loss
-    screen = m.update(base(State::Ready), 0, true, true, false);
+    screen = m.update(base(State::Ready), T, true, true, false);
     TEST_ASSERT_TRUE(screen.mqttLost);
-    screen = m.update(base(State::Ready), 0, true, false, false);
+    screen = m.update(base(State::Ready), T, true, false, false);
     TEST_ASSERT_FALSE(screen.mqttLost);  // MQTT not configured
 }
 
 void test_cup_shows_the_condition() {
     DisplayModel m;
-    TEST_ASSERT_EQUAL(Cup::Ready, m.update(base(State::Ready), 0, true, false, false).cup);
-    TEST_ASSERT_EQUAL(Cup::Ready, m.update(base(State::Recovering), 0, true, false, false).cup);
-    TEST_ASSERT_EQUAL(Cup::Ready, m.update(base(State::Steam), 0, true, false, false).cup);
-    TEST_ASSERT_EQUAL(Cup::Empty, m.update(base(State::Off), 0, true, false, false).cup);
+    TEST_ASSERT_EQUAL(Cup::Ready, m.update(base(State::Ready), T, true, false, false).cup);
+    TEST_ASSERT_EQUAL(Cup::Ready, m.update(base(State::Recovering), T, true, false, false).cup);
+    TEST_ASSERT_EQUAL(Cup::Ready, m.update(base(State::Steam), T, true, false, false).cup);
+    TEST_ASSERT_EQUAL(Cup::Empty, m.update(base(State::Off), T, true, false, false).cup);
 
     Snapshot heating = base(State::Heating);
     heating.temperature = 58;  // halfway from 20 to 96
-    Screen screen = m.update(heating, 0, true, false, false);
+    Screen screen = m.update(heating, T, true, false, false);
     TEST_ASSERT_EQUAL(Cup::Heating, screen.cup);
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.5f, screen.cupFill);
     heating.temperature = 15;
-    TEST_ASSERT_EQUAL_FLOAT(0, m.update(heating, 0, true, false, false).cupFill);
+    TEST_ASSERT_EQUAL_FLOAT(0, m.update(heating, T, true, false, false).cupFill);
 
     Snapshot booting = base(State::Booting);
     booting.temperature = NAN;
-    screen = m.update(booting, 0, true, false, false);
+    screen = m.update(booting, T, true, false, false);
     TEST_ASSERT_EQUAL(Cup::Heating, screen.cup);
     TEST_ASSERT_EQUAL_FLOAT(0, screen.cupFill);
 }
@@ -160,8 +163,8 @@ void test_pixel_shift_is_small_and_slow() {
         }
     }
     TEST_ASSERT_EQUAL(4 * 3600000 / DisplayModel::kShiftMs, positions);  // one move per period
-    Screen a = m.update(base(State::Ready), 1000, true, false, false);
-    Screen b = m.update(base(State::Ready), 1000 + DisplayModel::kShiftMs - 2000, true, false, false);
+    Screen a = m.update(base(State::Ready), DisplayModel::kShiftMs + 1000, true, false, false);
+    Screen b = m.update(base(State::Ready), 2 * DisplayModel::kShiftMs - 1000, true, false, false);
     TEST_ASSERT_EQUAL(a.shiftX, b.shiftX);  // not per frame
     TEST_ASSERT_EQUAL(a.shiftY, b.shiftY);
 }
@@ -171,7 +174,7 @@ void test_standby_cup_drifts_on_screen_and_display_goes_off_when_cold() {
     Snapshot s = base(State::Standby);
     s.temperature = 70;
     int minX = 999, maxX = -999, minY = 999, maxY = -999;
-    for (uint32_t t = 0; t < 600000; t += 100) {
+    for (uint32_t t = T; t < T + 600000; t += 100) {
         Screen screen = m.update(s, t, true, false, false);
         TEST_ASSERT_EQUAL(Layout::Standby, screen.layout);
         TEST_ASSERT_EQUAL(Cup::Standby, screen.cup);
@@ -191,11 +194,41 @@ void test_standby_cup_drifts_on_screen_and_display_goes_off_when_cold() {
     TEST_ASSERT_EQUAL(64 - DisplayModel::kStandbyCupH - DisplayModel::kStandbyTextH, maxY);
 
     s.temperature = 40;
-    TEST_ASSERT_TRUE(m.update(s, 0, true, false, false).displayOn);
+    TEST_ASSERT_TRUE(m.update(s, T, true, false, false).displayOn);
     s.temperature = 39.9f;
-    TEST_ASSERT_FALSE(m.update(s, 0, true, false, false).displayOn);
-    TEST_ASSERT_TRUE(m.update(base(State::Ready), 0, true, false, false).displayOn);
-    TEST_ASSERT_FALSE(m.update(base(State::Ready), 0, true, false, false).dim);
+    TEST_ASSERT_FALSE(m.update(s, T, true, false, false).displayOn);
+    TEST_ASSERT_TRUE(m.update(base(State::Ready), T, true, false, false).displayOn);
+    TEST_ASSERT_FALSE(m.update(base(State::Ready), T, true, false, false).dim);
+}
+
+void test_start_screen_for_the_first_five_seconds() {
+    DisplayModel m;
+    for (State state : {State::Booting, State::Heating, State::Ready, State::Off}) {
+        Screen screen = m.update(base(state), 0, true, false, false);
+        TEST_ASSERT_EQUAL(Layout::Splash, screen.layout);
+        TEST_ASSERT_EQUAL(Cup::Hidden, screen.cup);
+        TEST_ASSERT_TRUE(screen.displayOn);
+        TEST_ASSERT_FALSE(screen.dim);
+        TEST_ASSERT_EQUAL(0, screen.shiftX);
+        TEST_ASSERT_EQUAL(0, screen.shiftY);
+        TEST_ASSERT_EQUAL_FLOAT(95.8f, screen.temperature);  // shown small: it already heats
+    }
+    TEST_ASSERT_EQUAL(Layout::Splash, m.update(base(State::Heating), T - 1, true, false, false).layout);
+    TEST_ASSERT_EQUAL(Layout::Normal, m.update(base(State::Heating), T, true, false, false).layout);
+    TEST_ASSERT_EQUAL(Layout::Booting, m.update(base(State::Booting), T, true, false, false).layout);
+}
+
+void test_error_and_shot_replace_the_start_screen() {
+    DisplayModel m;
+    Snapshot error = base(State::Error);
+    error.error = ErrorKind::Sensor;
+    TEST_ASSERT_EQUAL(Layout::Error, m.update(error, 1000, true, false, false).layout);
+
+    Snapshot shot = base(State::Shot);
+    shot.shotTimerS = 2;
+    Screen screen = m.update(shot, 2000, true, false, false);
+    TEST_ASSERT_EQUAL(Layout::Shot, screen.layout);
+    TEST_ASSERT_EQUAL(Cup::Filling, screen.cup);
 }
 
 void test_backoff_retries_forever_with_growing_delay() {
@@ -238,6 +271,8 @@ int main() {
     RUN_TEST(test_animation_depends_on_time_only);
     RUN_TEST(test_pixel_shift_is_small_and_slow);
     RUN_TEST(test_standby_cup_drifts_on_screen_and_display_goes_off_when_cold);
+    RUN_TEST(test_start_screen_for_the_first_five_seconds);
+    RUN_TEST(test_error_and_shot_replace_the_start_screen);
     RUN_TEST(test_backoff_retries_forever_with_growing_delay);
     RUN_TEST(test_backoff_survives_millis_wraparound);
     return UNITY_END();

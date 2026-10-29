@@ -46,8 +46,6 @@ Screen DisplayModel::update(const Snapshot &s, uint32_t nowMs, bool wifiConnecte
 
     if (s.state == State::Error) {
         screen.layout = Layout::Error;
-    } else if (s.state == State::Standby) {
-        screen.layout = Layout::Standby;
     } else if (isShot) {
         screen.layout = Layout::Shot;
         screen.timerS = s.shotTimerS;
@@ -55,6 +53,10 @@ Screen DisplayModel::update(const Snapshot &s, uint32_t nowMs, bool wifiConnecte
         screen.layout = Layout::Shot;
         screen.timerS = s.lastShot.durationS;
         screen.timerFinal = true;
+    } else if (nowMs < kSplashMs) {
+        screen.layout = Layout::Splash;
+    } else if (s.state == State::Standby) {
+        screen.layout = Layout::Standby;
     } else if (s.state == State::Booting) {
         screen.layout = Layout::Booting;
     } else {
@@ -65,7 +67,8 @@ Screen DisplayModel::update(const Snapshot &s, uint32_t nowMs, bool wifiConnecte
     screen.frame = (uint8_t)((nowMs / kFrameMs) % kFrames);
     screen.displayOn = true;
     switch (screen.layout) {
-        case Layout::Error: screen.cup = Cup::Hidden; break;
+        case Layout::Error:
+        case Layout::Splash: screen.cup = Cup::Hidden; break;
         case Layout::Standby:
             screen.cup = Cup::Standby;
             screen.dim = true;
